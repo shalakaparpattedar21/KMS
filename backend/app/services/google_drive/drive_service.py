@@ -50,7 +50,9 @@ class DriveService:
 
         response.raise_for_status()
 
-        return response.content
+        return response.content.decode(
+    "utf-8-sig"
+)
 
     @staticmethod
     def export_google_doc(
@@ -73,4 +75,6 @@ class DriveService:
 
         response.raise_for_status()
 
-        return response.text
+        return response.content.decode(
+    "utf-8-sig"
+)

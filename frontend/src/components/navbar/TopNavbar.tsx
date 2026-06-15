@@ -4,14 +4,10 @@ export default function TopNavbar() {
   const location = useLocation();
 
   const navItems = [
-    { label: "Dashboard", path: "/dashboard" },
     { label: "AI Search", path: "/search" },
     { label: "Documents", path: "/documents" },
-    { label: "Users", path: "/users" },
-    { label: "Activity", path: "/activity" },
-    { label: "Settings", path: "/settings" },
+    
   ];
-
   return (
     <header className="h-16 bg-slate-900 text-white border-b border-slate-800">
       <div className="h-full flex items-center justify-between px-8">

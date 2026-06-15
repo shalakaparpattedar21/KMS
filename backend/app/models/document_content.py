@@ -18,3 +18,4 @@ class DocumentContent(Base):
     content: Mapped[str] = mapped_column(
         Text
     )
+    

@@ -28,4 +28,4 @@ async def start_sync(
     )
     return {
         "synced": count
-    }
+    }   

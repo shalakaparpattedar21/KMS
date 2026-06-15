@@ -1,6 +1,12 @@
 from datetime import datetime
-from sqlalchemy import ForeignKey
-from sqlalchemy import String, Boolean, DateTime, BigInteger
+
+from sqlalchemy import (
+    String,
+    Boolean,
+    DateTime,
+    BigInteger,
+    ForeignKey
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -9,16 +15,22 @@ from app.database.base import Base
 class Document(Base):
     __tablename__ = "documents"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(
+        primary_key=True
+    )
 
     drive_file_id: Mapped[str] = mapped_column(
         String(255),
         unique=True
     )
 
-    name: Mapped[str] = mapped_column(String(500))
+    name: Mapped[str] = mapped_column(
+        String(500)
+    )
 
-    mime_type: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(
+        String(255)
+    )
 
     owner_email: Mapped[str | None] = mapped_column(
         String(255),
@@ -45,15 +57,22 @@ class Document(Base):
         default=False
     )
 
+    content_extracted: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False
+    )
+
     sync_status: Mapped[str] = mapped_column(
         String(50),
         default="pending"
     )
+
     last_synced_at: Mapped[datetime | None] = mapped_column(
-    DateTime,
-    nullable=True
-)
+        DateTime,
+        nullable=True
+    )
+
     user_id: Mapped[int | None] = mapped_column(
-    ForeignKey("users.id"),
-    nullable=True
-)
+        ForeignKey("users.id"),
+        nullable=True
+    )
