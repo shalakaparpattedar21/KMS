@@ -10,6 +10,7 @@ from app.services.google_drive.drive_service import DriveService
 from app.database.session import get_db
 from app.models.document import Document
 from app.models.document_content import DocumentContent
+from app.services.rag.index_service import (IndexService)
 
 router = APIRouter(
     prefix="/api/documents",
@@ -156,6 +157,12 @@ def extract_document(
 
     db.commit()
 
+    IndexService.index_document(
+        document.id,
+        document.name,
+        text
+    )
+
     return {
         "status": "success",
         "document_id": document.id,
@@ -191,8 +198,8 @@ def extract_all_documents(
 
     for document in documents:
 
-      if document.content_extracted:
-        continue
+        # if document.content_extracted:
+        #     continue
 
         try:
 
@@ -231,14 +238,21 @@ def extract_all_documents(
 
             document.content_extracted = True
 
+            IndexService.index_document(
+                document.id,
+                document.name,
+                text
+            )
+
             processed += 1
 
         except Exception as e:
 
-            print(
-                f"Failed: {document.name}",
-                str(e)
-            )
+            import traceback
+
+            print(f"\nFAILED DOCUMENT: {document.name}")
+
+            traceback.print_exc()
 
     db.commit()
 

@@ -11,8 +11,11 @@ from app.models.document_content import DocumentContent
 from app.models.chat_session import ChatSession
 from app.models.chat_message import ChatMessage
 from app.schemas.chat import SendMessageRequest
+from app.services.rag.retrieval_service import RetrievalService
 from app.services.retrieval.unified_retriever import UnifiedRetriever
-
+from app.services.ai.intent_service import IntentService
+from app.models.email import Email
+import re
 import json
 
 router = APIRouter(
@@ -100,7 +103,8 @@ def build_sources_payload(documents, emails) -> str:
 
 def build_context(documents, emails) -> str:
     document_context = "\n\n".join(
-        doc.content[:3000] for doc in documents
+        doc.name
+        for doc in documents
     )
 
     email_context = "\n\n".join(
@@ -154,7 +158,25 @@ def send_message(
     db.commit()
 
     question = request.message
+    question_lower = question.lower()
+
     keywords = extract_keywords(question)
+    sender_search = False
+    sender_name = None
+
+    match = re.search(
+        r"(?:emails?|mails?)\s+(?:from|by|sent by)\s+(.+)",
+        question_lower
+    )
+
+    if match:
+
+        sender_search = True
+
+        sender_name = (
+            match.group(1)
+            .strip()
+        )
 
     # --- Build conversation history (exclude the just-saved user message) ---
     history = (
@@ -175,8 +197,109 @@ def send_message(
     # DIRECT ANSWER PATH — no Gemini
     # -----------------------------------------------------------------------
     if not is_follow_up(question):
+        if sender_search:
 
-        retrieval_results = UnifiedRetriever.search(question, keywords, db)
+            intent = IntentService.detect(
+                question
+            )
+
+            if intent["intent"] == "search_sender":
+
+                emails = (
+                    db.query(Email)
+                    .filter(
+                        Email.sender.ilike(
+                            f"%{sender_name}%"
+                        )
+                    )
+                    .order_by(
+                        Email.id.desc()
+                    )
+                    .limit(15)
+                    .all()
+                )
+
+
+                answer = (
+                    f"Found {len(emails)} emails "
+                    f"from {sender_name}\n\n"
+                )
+
+                if not emails:
+
+                    answer = (
+                        f"No emails found from '{sender_name}'."
+                    )
+
+                    def stream_no_sender():
+
+                        yield answer
+
+                        _save_assistant_message(
+                            db,
+                            session,
+                            session_id,
+                            question,
+                            answer
+                        )
+
+                    return StreamingResponse(
+                        stream_no_sender(),
+                        media_type="text/event-stream"
+                    )
+
+            else:
+
+                retrieval_results = UnifiedRetriever.search(
+                    question,
+                    db,
+                    top_k=10
+                )
+
+                emails = retrieval_results["emails"]
+                answer = (
+                    f"Found {len(emails)} emails "
+                    f"from {sender_name}\n\n"
+                )
+
+            for index, email in enumerate(
+                emails,
+                start=1
+            ):
+
+                answer += (
+                    f"{index}. {email.subject}\n"
+                    f"From: {email.sender}\n"
+                    f"Date: {email.received_at}\n\n"
+                )
+
+            def stream_sender_results():
+
+                yield answer
+
+                yield build_sources_payload(
+                    [],
+                    emails
+                )
+
+                _save_assistant_message(
+                    db,
+                    session,
+                    session_id,
+                    question,
+                    answer
+                )
+
+            return StreamingResponse(
+                stream_sender_results(),
+                media_type="text/event-stream"
+            )
+
+        retrieval_results = UnifiedRetriever.search(
+            question,
+            db,
+            top_k=10
+        )
         documents = retrieval_results["documents"]
         emails = retrieval_results["emails"]
 
@@ -226,12 +349,10 @@ def send_message(
 
             first_doc = documents[0]
 
-            best_match = extract_best_answer(
-                first_doc.content,
-                keywords
+            answer = (
+                f"Relevant document found:\n\n"
+                f"{first_doc.name}"
             )
-
-            answer = best_match["answer"]
 
         else:
 
@@ -276,7 +397,8 @@ def send_message(
     # FOLLOW-UP PATH — use Gemini
     # -----------------------------------------------------------------------
     else:
-        retrieval_results = UnifiedRetriever.search(question, keywords, db)
+        retrieval_results = UnifiedRetriever.search(question,db)
+        print(retrieval_results)
         documents = retrieval_results["documents"]
         emails = retrieval_results["emails"]
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
-
+import EmailModal from "../../components/email/EmailModal";
 interface Session {
   id: number;
   title: string;
@@ -32,6 +32,8 @@ export default function ChatUI() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sources, setSources] = useState<Sources>({ documents: [], emails: [] });
+  const [selectedEmail, setSelectedEmail] =
+  useState<any>(null);
 
   useEffect(() => {
     loadSessions();
@@ -79,6 +81,27 @@ export default function ChatUI() {
       console.error(error);
     }
   };
+  const openEmail = async (
+      emailId: number
+    ) => {
+
+      try {
+
+        const response = await fetch(
+          `http://localhost:8000/api/gmail/email/${emailId}`,
+          {
+            credentials: "include"
+          }
+        );
+
+        const data = await response.json();
+
+        setSelectedEmail(data);
+
+      } catch (err) {
+        console.error(err);
+      }
+    };
 
   const createNewChat = async () => {
     try {
@@ -403,32 +426,36 @@ export default function ChatUI() {
                               Emails
                             </div>
                             {sources.emails.map((email) => (
-                              <div
-                                key={email.id}
-                                className="mb-2"
-                              >
-                                <a
-                                  href={email.gmail_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-blue-600 hover:underline text-xs flex items-start gap-2"
-                                >
-                                  <span>✉️</span>
+  <div
+    key={email.id}
+    onClick={() => openEmail(email.id)}
+    className="
+      cursor-pointer
+      hover:bg-gray-100
+      rounded
+      p-2
+      mb-2
+      text-xs
+      flex
+      items-start
+      gap-2
+    "
+  >
+    <span>✉️</span>
 
-                                  <span>
-                                    <span className="font-medium">
-                                      {email.subject}
-                                    </span>
+    <span>
+      <span className="font-medium">
+        {email.subject}
+      </span>
 
-                                    {" · "}
+      {" · "}
 
-                                    <span className="text-gray-500">
-                                      {email.sender}
-                                    </span>
-                                  </span>
-                                </a>
-                              </div>
-                            ))}
+      <span className="text-gray-500">
+        {email.sender}
+      </span>
+    </span>
+  </div>
+))}
                           </div>
                         )}
                       </div>
@@ -537,6 +564,12 @@ export default function ChatUI() {
           to { transform: rotate(360deg); }
         }
       `}</style>
+      {selectedEmail && (
+  <EmailModal
+    email={selectedEmail}
+    onClose={() => setSelectedEmail(null)}
+  />
+)}
     </div>
   );
 }

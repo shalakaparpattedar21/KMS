@@ -89,41 +89,88 @@ class GmailService:
         recipient: str,
         content: str = ""
     ):
-        """
-        Forward an email to another recipient
-        """
         try:
-            # Get original message
-            original = requests.get(
+
+            response = requests.get(
                 f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
-                headers={"Authorization": f"Bearer {access_token}"}
-            ).json()
+                headers={
+                    "Authorization": f"Bearer {access_token}"
+                }
+            )
 
-            subject = original.get("subject", "Fwd: ")
-            body = f"{content}\n\n--- Forwarded message ---\n{original.get('body', '')}"
+            original = response.json()
 
-            message = MIMEText(body)
-            message['to'] = recipient
-            message['subject'] = f"Fwd: {subject}"
+            print("[FORWARD] ORIGINAL EMAIL:")
+            print(original)
 
-            raw_message = base64.urlsafe_b64encode(
-                message.as_bytes()
-            ).decode()
+            payload = original.get(
+                "payload",
+                {}
+            )
 
-            response = requests.post(
+            headers = payload.get(
+                "headers",
+                []
+            )
+
+            subject = "No Subject"
+
+            for header in headers:
+                if header["name"] == "Subject":
+                    subject = header["value"]
+                    break
+
+            forwarded_body = f"""
+{content}
+
+-------------------------
+FORWARDED EMAIL
+-------------------------
+
+Subject: {subject}
+
+Message ID:
+{message_id}
+"""
+
+            message = MIMEText(
+                forwarded_body
+            )
+
+            message["to"] = recipient
+            message["subject"] = f"Fwd: {subject}"
+
+            raw_message = (
+                base64.urlsafe_b64encode(
+                    message.as_bytes()
+                ).decode()
+            )
+
+            send_response = requests.post(
                 "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json"
                 },
-                json={"raw": raw_message}
+                json={
+                    "raw": raw_message
+                }
             )
 
-            return response.json()
+            print(
+                "[FORWARD] GMAIL RESPONSE:"
+            )
+
+            print(
+                send_response.json()
+            )
+
+            return send_response.json()
 
         except Exception as e:
-            return {"error": str(e)}
-
+            return {
+                "error": str(e)
+            }
     @staticmethod
     def create_draft(
         access_token: str,
