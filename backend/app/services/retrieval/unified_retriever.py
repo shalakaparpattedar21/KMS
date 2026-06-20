@@ -1,47 +1,23 @@
-from app.services.rag.retrieval_service import RetrievalService
+import logging
 from sqlalchemy.orm import Session
+
+from app.services.rag.retrieval_service import RetrievalService
+
+logger = logging.getLogger(__name__)
 
 
 class UnifiedRetriever:
     """
-    Unified retriever that bridges Chroma semantic search with PostgreSQL.
-    
-    New architecture:
-    1. Uses RetrievalService for semantic search (Chroma)
-    2. Fetches full objects from PostgreSQL
-    3. Returns SQLAlchemy objects with all attributes
-    4. Chat routes continue to work unchanged
+    Thin facade over RetrievalService used by the chat / search routes.
+    The actual hybrid logic (Chroma semantic + Postgres SQL fallback) lives in RetrievalService.
     """
 
     @staticmethod
-    def search(
-        question: str,
-        db: Session,
-        top_k: int = 5
-    ) -> dict:
-        """
-        Perform unified hybrid search.
-        
-        Args:
-            question: User's question
-            db: Database session
-            top_k: Number of results per type
-        
-        Returns:
-            {
-                "documents": [Document objects],
-                "emails": [Email objects]
-            }
-        """
-        print(f"\n[UNIFIED] Question: {question}")
-        
-        # Use semantic search (Chroma) + PostgreSQL fetch
-        results = RetrievalService.search(
-            query=question,
-            db=db,
-            top_k=top_k
+    def search(question: str, db: Session, top_k: int = 5) -> dict:
+        logger.info(f"[UNIFIED] question={question!r} top_k={top_k}")
+        results = RetrievalService.search(query=question, db=db, top_k=top_k)
+        logger.info(
+            f"[UNIFIED] -> docs={len(results['documents'])} "
+            f"emails={len(results['emails'])}"
         )
-        
-        print(f"[UNIFIED] Returning: {len(results['documents'])} docs, {len(results['emails'])} emails\n")
-        
         return results

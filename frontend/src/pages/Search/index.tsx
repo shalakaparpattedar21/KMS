@@ -1,6 +1,20 @@
-import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Bot,
+  ExternalLink,
+  FileText,
+  Inbox,
+  Loader2,
+  Mail,
+  MessageSquare,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2,
+  User,
+} from "lucide-react";
 import EmailModal from "../../components/email/EmailModal";
+
 interface Session {
   id: number;
   title: string;
@@ -17,12 +31,22 @@ interface Message {
 interface Sources {
   documents: { id: number; name: string; web_view_link: string }[];
   emails: {
-  id: number;
+    id: number;
+    subject: string;
+    sender: string;
+    gmail_message_id: string;
+    gmail_url: string;
+  }[];
+}
+
+interface EmailDetails {
   subject: string;
   sender: string;
+  recipient: string;
+  received_at: string;
+  body: string;
   gmail_message_id: string;
-  gmail_url: string;
-}[];
+  gmail_thread_id: string;
 }
 
 export default function ChatUI() {
@@ -32,12 +56,7 @@ export default function ChatUI() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sources, setSources] = useState<Sources>({ documents: [], emails: [] });
-  const [selectedEmail, setSelectedEmail] =
-  useState<any>(null);
-
-  useEffect(() => {
-    loadSessions();
-  }, []);
+  const [selectedEmail, setSelectedEmail] = useState<EmailDetails | null>(null);
 
   const loadSessions = async () => {
     try {
@@ -81,27 +100,19 @@ export default function ChatUI() {
       console.error(error);
     }
   };
-  const openEmail = async (
-      emailId: number
-    ) => {
 
-      try {
+  const openEmail = async (emailId: number) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/gmail/email/${emailId}`, {
+        credentials: "include",
+      });
 
-        const response = await fetch(
-          `http://localhost:8000/api/gmail/email/${emailId}`,
-          {
-            credentials: "include"
-          }
-        );
-
-        const data = await response.json();
-
-        setSelectedEmail(data);
-
-      } catch (err) {
-        console.error(err);
-      }
-    };
+      const data = await response.json();
+      setSelectedEmail(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const createNewChat = async () => {
     try {
@@ -168,9 +179,7 @@ export default function ChatUI() {
           const chunk = decoder.decode(value);
           streamedText += chunk;
 
-          const sourcesMatch = streamedText.match(
-            /\[SOURCES_START\](.*?)\[SOURCES_END\]/s
-          );
+          const sourcesMatch = streamedText.match(/\[SOURCES_START\](.*?)\[SOURCES_END\]/s);
 
           let displayText = streamedText;
           let extractedSources: Sources = { documents: [], emails: [] };
@@ -193,10 +202,7 @@ export default function ChatUI() {
             const lastMsg = updated[updated.length - 1];
 
             if (lastMsg && lastMsg.role === "assistant") {
-              return [
-                ...updated.slice(0, -1),
-                { ...lastMsg, content: displayText },
-              ];
+              return [...updated.slice(0, -1), { ...lastMsg, content: displayText }];
             } else {
               return [
                 ...updated,
@@ -215,361 +221,309 @@ export default function ChatUI() {
     }
   };
 
-  const hasSources =
-    sources.documents.length > 0 || sources.emails.length > 0;
+  useEffect(() => {
+    let active = true;
+
+    const loadInitialSessions = async () => {
+      try {
+        const response = await fetch("http://localhost:8000/api/chat/sessions", {
+          credentials: "include",
+        });
+        const data = await response.json();
+
+        if (!active) return;
+
+        setSessions(data);
+        if (data.length > 0) {
+          const session = data[0];
+          setSelectedSession(session);
+          setSources({ documents: [], emails: [] });
+
+          const messagesResponse = await fetch(
+            `http://localhost:8000/api/chat/sessions/${session.id}/messages`,
+            { credentials: "include" }
+          );
+          const messagesData = await messagesResponse.json();
+
+          if (active) {
+            setMessages(messagesData);
+          }
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    loadInitialSessions();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const hasSources = sources.documents.length > 0 || sources.emails.length > 0;
+  const lastAssistantId = useMemo(
+    () => messages.filter((m) => m.role === "assistant").at(-1)?.id,
+    [messages]
+  );
+
+  const suggestions = [
+    "Summarize recent institutional updates",
+    "Find emails about admissions",
+    "Search Drive documents for policy references",
+    "Compare related documents",
+  ];
 
   return (
-    <div className="flex h-[calc(100vh-100px)] bg-white text-gray-900 rounded-xl shadow-lg overflow-hidden">
-      <style>{`
-        .sidebar-gradient {
-          background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-        }
-        .message-user { animation: slideInRight 0.3s ease-out; }
-        .message-assistant { animation: slideInLeft 0.3s ease-out; }
-        @keyframes slideInRight {
-          from { opacity: 0; transform: translateX(20px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes slideInLeft {
-          from { opacity: 0; transform: translateX(-20px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-        .session-item { transition: all 0.2s ease; }
-        .session-item:hover {
-          background-color: rgba(59, 130, 246, 0.05);
-          transform: translateX(4px);
-        }
-        .input-focus { transition: all 0.2s ease; }
-        .input-focus:focus { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-      `}</style>
+    <div className="flex h-full min-h-[calc(100vh-120px)] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl shadow-zinc-950/5">
+      <aside className="hidden w-80 shrink-0 flex-col border-r border-zinc-800 bg-[#121214] text-white md:flex">
+        <div className="border-b border-white/10 p-4">
+          <div className="mb-4 flex items-center gap-3 px-1">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#A61E22] text-sm font-black shadow-lg shadow-[#A61E22]/20">
+              R
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">RIIDL</p>
+              <h2 className="text-sm font-semibold">Knowledge AI</h2>
+            </div>
+          </div>
 
-      {/* Sidebar */}
-      <div className="w-72 sidebar-gradient border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
           <button
             onClick={createNewChat}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg py-2.5 hover:from-blue-700 hover:to-blue-800 transition-all font-medium text-sm"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-100"
           >
-            <i className="ti ti-plus" style={{ fontSize: "18px" }}></i>
+            <Plus size={17} />
             New Chat
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-3 kms-scrollbar">
+          <p className="mb-2 px-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
+            Sessions
+          </p>
+
           {sessions.length === 0 ? (
-            <div className="p-4 text-center text-gray-500 text-sm">
-              <i
-                className="ti ti-inbox"
-                style={{ fontSize: "32px", opacity: 0.4, display: "block", marginBottom: "8px" }}
-              ></i>
+            <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center text-sm text-zinc-400">
+              <Inbox size={30} className="mb-3 text-zinc-500" />
               No conversations yet
             </div>
           ) : (
-            sessions.map((session) => (
-              <div
-                key={session.id}
-                onClick={() => selectSession(session)}
-                className={`session-item p-4 cursor-pointer border-b border-gray-100 group flex items-center justify-between ${
-                  selectedSession?.id === session.id
-                    ? "bg-blue-50 border-l-4 border-l-blue-600"
-                    : ""
-                }`}
-              >
-                <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <i
-                    className="ti ti-message-circle"
-                    style={{
-                      fontSize: "16px",
-                      marginTop: "2px",
-                      color: selectedSession?.id === session.id ? "#2563eb" : "#999",
-                    }}
-                  ></i>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {session.title}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {session.createdAt || "Just now"}
-                    </p>
+            <div className="space-y-1">
+              {sessions.map((session) => {
+                const active = selectedSession?.id === session.id;
+                return (
+                  <div
+                    key={session.id}
+                    onClick={() => selectSession(session)}
+                    className={`group flex cursor-pointer items-start gap-3 rounded-lg px-3 py-3 transition ${
+                      active
+                        ? "bg-[#A61E22] text-white shadow-lg shadow-[#A61E22]/20"
+                        : "text-zinc-300 hover:bg-white/8 hover:text-white"
+                    }`}
+                  >
+                    <MessageSquare size={16} className="mt-0.5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{session.title}</p>
+                      <p className={`mt-1 text-xs ${active ? "text-red-100" : "text-zinc-500"}`}>
+                        {session.createdAt || "Recent"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteSession(session.id);
+                      }}
+                      className={`rounded-md p-1 opacity-0 transition group-hover:opacity-100 ${
+                        active ? "hover:bg-white/15" : "hover:bg-white/10 hover:text-red-200"
+                      }`}
+                      title="Delete chat"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteSession(session.id);
-                  }}
-                  className="ml-2 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                  title="Delete chat"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))
+                );
+              })}
+            </div>
           )}
         </div>
-      </div>
+      </aside>
 
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-white">
-        {selectedSession && (
-          <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-transparent">
-            <h1 className="text-lg font-semibold text-gray-900">
-              {selectedSession.title}
-            </h1>
-            <p className="text-xs text-gray-500 mt-1">
-              Powered by AI • Document Search & Answers
-            </p>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center">
-              <div
-                style={{
-                  width: "56px",
-                  height: "56px",
-                  borderRadius: "50%",
-                  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginBottom: "16px",
-                }}
-              >
-                <i className="ti ti-brain" style={{ fontSize: "28px", color: "white" }}></i>
-              </div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                Start asking questions
-              </h2>
-              <p className="text-gray-500 max-w-sm mb-6">
-                Ask anything about your documents. I'll search and provide intelligent answers
-                with sources.
+      <section className="flex min-w-0 flex-1 flex-col bg-[#fbfaf9]">
+        <header className="border-b border-zinc-200 bg-white px-5 py-4 md:px-8">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#A61E22]">
+                AI Search
               </p>
-              <div className="grid grid-cols-2 gap-2">
-                {["Document summary", "Key concepts", "Specific search", "Comparisons"].map(
-                  (suggestion, i) => (
+              <h1 className="truncate text-lg font-semibold text-zinc-950">
+                {selectedSession?.title || "Enterprise Knowledge Assistant"}
+              </h1>
+            </div>
+            <div className="hidden items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-600 sm:flex">
+              <Sparkles size={14} className="text-[#A61E22]" />
+              RAG-enabled responses
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-4 py-6 kms-scrollbar md:px-8">
+          <div className="mx-auto flex max-w-4xl flex-col gap-6">
+            {messages.length === 0 ? (
+              <div className="flex min-h-[52vh] flex-col items-center justify-center text-center">
+                <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-lg bg-[#A61E22] text-white shadow-lg shadow-[#A61E22]/20">
+                  <Bot size={28} />
+                </div>
+                <h2 className="text-2xl font-semibold text-zinc-950">Ask across RIIDL knowledge</h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-600">
+                  Search Gmail, Drive documents, and institutional context in one conversation with source-backed answers.
+                </p>
+                <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+                  {suggestions.map((suggestion) => (
                     <button
-                      key={i}
+                      key={suggestion}
                       onClick={() => setInput(suggestion)}
-                      className="px-3 py-2 text-xs text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-left text-sm font-medium text-zinc-700 shadow-sm transition hover:border-[#A61E22]/30 hover:text-[#A61E22] hover:shadow-md"
                     >
                       {suggestion}
                     </button>
-                  )
-                )}
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : (
-            messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} message-${msg.role}`}
-              >
-                <div className="flex gap-3 max-w-2xl">
-                  {msg.role === "assistant" && (
-                    <div
-                      style={{
-                        width: "32px",
-                        height: "32px",
-                        borderRadius: "50%",
-                        background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <i className="ti ti-brain" style={{ fontSize: "16px", color: "white" }}></i>
-                    </div>
-                  )}
+            ) : (
+              messages.map((msg) => {
+                const isUser = msg.role === "user";
+                return (
+                  <div key={msg.id} className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+                    {!isUser && (
+                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-950 text-white">
+                        <Bot size={18} />
+                      </div>
+                    )}
 
-                  <div
-                    className={`px-4 py-3 rounded-2xl whitespace-pre-wrap text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-blue-600 text-white rounded-br-none"
-                        : "bg-gray-100 text-gray-900 rounded-bl-none border border-gray-200"
-                    }`}
-                  >
-                    {msg.content}
+                    <div className={`max-w-[min(720px,92%)] ${isUser ? "order-first" : ""}`}>
+                      <div
+                        className={`rounded-2xl px-5 py-4 text-sm leading-7 shadow-sm ${
+                          isUser
+                            ? "rounded-tr-md bg-[#A61E22] text-white shadow-[#A61E22]/15"
+                            : "rounded-tl-md border border-zinc-200 bg-white text-zinc-800"
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
 
-                    {/* Sources panel — shown only on the last assistant message */}
-                    {msg.role === "assistant" && hasSources &&
-                      msg.id === messages.filter((m) => m.role === "assistant").at(-1)?.id && (
-                      <div className="mt-4 border-t border-gray-300 pt-3 space-y-3">
-                        <div className="text-xs font-semibold text-gray-600">Sources</div>
-
-                        {sources.documents.length > 0 && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1 font-medium">
-                              Documents
+                        {!isUser && hasSources && msg.id === lastAssistantId && (
+                          <div className="mt-5 border-t border-zinc-200 pt-4">
+                            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                              <Sparkles size={14} className="text-[#A61E22]" />
+                              Sources
                             </div>
-                            {sources.documents.map((doc) => (
-                              <div key={doc.id} className="mb-1">
-                                <a
-                                  href={doc.web_view_link}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-blue-600 text-xs hover:underline flex items-center gap-1"
-                                >
-                                  <span>📄</span>
-                                  {doc.name}
-                                </a>
+
+                            {sources.documents.length > 0 && (
+                              <div className="mb-4 space-y-2">
+                                <p className="text-xs font-semibold text-zinc-500">Documents</p>
+                                {sources.documents.map((doc) => (
+                                  <a
+                                    key={doc.id}
+                                    href={doc.web_view_link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-700 transition hover:border-[#A61E22]/25 hover:bg-white hover:text-[#A61E22]"
+                                  >
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <FileText size={15} className="shrink-0" />
+                                      <span className="truncate">{doc.name}</span>
+                                    </span>
+                                    <ExternalLink size={14} className="shrink-0" />
+                                  </a>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        )}
+                            )}
 
-                        {sources.emails.length > 0 && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1 font-medium">
-                              Emails
-                            </div>
-                            {sources.emails.map((email) => (
-  <div
-    key={email.id}
-    onClick={() => openEmail(email.id)}
-    className="
-      cursor-pointer
-      hover:bg-gray-100
-      rounded
-      p-2
-      mb-2
-      text-xs
-      flex
-      items-start
-      gap-2
-    "
-  >
-    <span>✉️</span>
-
-    <span>
-      <span className="font-medium">
-        {email.subject}
-      </span>
-
-      {" · "}
-
-      <span className="text-gray-500">
-        {email.sender}
-      </span>
-    </span>
-  </div>
-))}
+                            {sources.emails.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold text-zinc-500">Emails</p>
+                                {sources.emails.map((email) => (
+                                  <button
+                                    key={email.id}
+                                    onClick={() => openEmail(email.id)}
+                                    className="flex w-full items-start gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 text-left text-xs transition hover:border-[#A61E22]/25 hover:bg-white"
+                                  >
+                                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#A61E22]/10 text-[#A61E22]">
+                                      <Mail size={15} />
+                                    </span>
+                                    <span className="min-w-0">
+                                      <span className="block truncate font-semibold text-zinc-800">
+                                        {email.subject}
+                                      </span>
+                                      <span className="mt-1 block truncate text-zinc-500">{email.sender}</span>
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    {isUser && (
+                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-200 text-zinc-700">
+                        <User size={18} />
+                      </div>
                     )}
                   </div>
+                );
+              })
+            )}
 
-                  {msg.role === "user" && (
-                    <div
-                      style={{
-                        width: "32px",
-                        height: "32px",
-                        borderRadius: "50%",
-                        background: "#e5e7eb",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <i className="ti ti-user" style={{ fontSize: "16px", color: "#6b7280" }}></i>
-                    </div>
-                  )}
+            {loading && (
+              <div className="flex justify-start gap-3">
+                <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-950 text-white">
+                  <Bot size={18} />
                 </div>
-              </div>
-            ))
-          )}
-
-          {loading && (
-            <div className="flex justify-start message-assistant">
-              <div className="flex gap-3">
-                <div
-                  style={{
-                    width: "32px",
-                    height: "32px",
-                    borderRadius: "50%",
-                    background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <i className="ti ti-brain" style={{ fontSize: "16px", color: "white" }}></i>
-                </div>
-                <div className="px-4 py-3 rounded-2xl bg-gray-100 rounded-bl-none border border-gray-200">
-                  <div className="flex gap-2">
-                    {[0, 0.2, 0.4].map((delay, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          width: "8px",
-                          height: "8px",
-                          borderRadius: "50%",
-                          background: "#9ca3af",
-                          animation: `pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite ${delay}s`,
-                        }}
-                      />
-                    ))}
+                <div className="rounded-2xl rounded-tl-md border border-zinc-200 bg-white px-5 py-4 shadow-sm">
+                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-500">
+                    <Loader2 size={16} className="animate-spin text-[#A61E22]" />
+                    Searching enterprise knowledge
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Input */}
-        <div className="border-t border-gray-200 p-6 bg-white">
-          <div className="flex gap-3">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
-              placeholder="Ask about your documents... (Shift+Enter for new line)"
-              className="input-focus flex-1 border border-gray-300 rounded-lg px-4 py-3 text-sm outline-none placeholder-gray-500 resize-none"
-            />
-            <button
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
-              className="px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium flex items-center gap-2"
-            >
-              {loading ? (
-                <i
-                  className="ti ti-loader"
-                  style={{ fontSize: "16px", animation: "spin 1s linear infinite" }}
-                ></i>
-              ) : (
-                <i className="ti ti-send" style={{ fontSize: "16px" }}></i>
-              )}
-            </button>
+            )}
           </div>
-          <p className="text-xs text-gray-400 mt-2">Press Enter to send</p>
         </div>
-      </div>
 
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 0.5; }
-          50% { opacity: 1; }
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-      {selectedEmail && (
-  <EmailModal
-    email={selectedEmail}
-    onClose={() => setSelectedEmail(null)}
-  />
-)}
+        <div className="border-t border-zinc-200 bg-white px-4 py-4 md:px-8">
+          <div className="mx-auto max-w-4xl">
+            <div className="flex items-end gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-2 shadow-sm focus-within:border-[#A61E22]/60 focus-within:bg-white focus-within:shadow-[0_0_0_4px_rgba(166,30,34,0.08)]">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
+                placeholder="Ask about Gmail, Drive, documents, or institutional knowledge..."
+                rows={1}
+                className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-3 py-3 text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={loading || !input.trim()}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#A61E22] text-white shadow-md shadow-[#A61E22]/20 transition hover:bg-[#8f181c] disabled:opacity-45"
+                title="Send message"
+              >
+                {loading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {selectedEmail && <EmailModal email={selectedEmail} onClose={() => setSelectedEmail(null)} />}
     </div>
   );
 }
+
+
+

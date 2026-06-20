@@ -95,7 +95,7 @@ async def google_callback(request: Request):
             db.close()
 
     return RedirectResponse(
-        url="http://localhost:5173/dashboard"
+        url="http://localhost:5173/search"
     )
 @router.get("/me")
 async def me(request: Request):

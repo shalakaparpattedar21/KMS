@@ -1,178 +1,194 @@
+import logging
+import re
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
 from app.services.rag.vector_store import collection
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.models.document import Document
+from app.models.document_content import DocumentContent
 from app.models.email import Email
-from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+_STOP_WORDS = {
+    "what", "is", "the", "a", "an", "of", "for", "in", "to", "and",
+    "from", "by", "me", "show", "list", "find", "give", "all", "emails",
+    "email", "mails", "mail", "documents", "document", "doc", "docs",
+    "please", "can", "you", "i", "want", "need", "about", "on", "with",
+    "any", "some", "this", "that", "these", "those",
+}
+
+
+def _extract_keywords(query: str) -> list:
+    """Extract non-stopword tokens of length >=2 from the query."""
+    tokens = re.findall(r"[A-Za-z0-9_]+", (query or "").lower())
+    return [t for t in tokens if len(t) >= 2 and t not in _STOP_WORDS]
+
+
+def _safe_int(value):
+    try:
+        if value is None:
+            return None
+        return int(str(value))
+    except (ValueError, TypeError):
+        return None
 
 
 class RetrievalService:
     """
     Hybrid Chroma + PostgreSQL retrieval service.
-    
     Flow:
-    1. Generate embedding for query
-    2. Search Chroma for semantic matches
-    3. Extract IDs from Chroma metadata
-    4. Fetch full objects from PostgreSQL
-    5. Return full SQLAlchemy objects with all attributes
+    1. Generate embedding for the query
+    2. Search Chroma (semantic) with a metadata filter ($eq)
+    3. Map metadata ids -> Postgres ids
+    4. Fetch full ORM objects from Postgres
+    5. If Chroma/Postgres yields nothing, FALL BACK to SQL ILIKE keyword search
     """
 
     @staticmethod
-    def search_documents(
-        query: str,
-        db: Session,
-        top_k: int = 5
-    ) -> list:
-        """
-        Search for documents using semantic similarity.
-        
-        Returns: List of full Document objects
-        """
+    def search_documents(query: str, db: Session, top_k: int = 5) -> list:
+        logger.info(f"[RAG] search_documents | query={query!r} top_k={top_k}")
+        documents: list = []
+
+        # ---- Semantic (Chroma) ----
         try:
-            print(f"[RAG] Searching documents for: {query}")
-            
-            # Step 1: Generate embedding
             embedding = EmbeddingService.embed(query)
-            print(f"[RAG] Embedding generated (dims: {len(embedding)})")
-            
-            # Step 2: Search Chroma with type filter
             chroma_results = collection.query(
                 query_embeddings=[embedding],
                 n_results=top_k,
-                where={"type": "document"}
+                where={"type": {"$eq": "document"}},
             )
-            
-            if not chroma_results or not chroma_results["metadatas"][0]:
-                print("[RAG] No document results from Chroma")
-                return []
-            
-            print(f"[RAG] Found {len(chroma_results['metadatas'][0])} documents in Chroma")
-            
-            # Step 3: Extract document IDs from metadata
-            doc_ids = []
-            for metadata in chroma_results["metadatas"][0]:
-                try:
-                    doc_id = int(metadata.get("id"))
-                    doc_ids.append(doc_id)
-                except (ValueError, TypeError):
-                    print(f"[RAG WARNING] Invalid doc ID in metadata: {metadata}")
-                    continue
-            
-            if not doc_ids:
-                print("[RAG] No valid document IDs extracted")
-                return []
-            
-            print(f"[RAG] Extracted IDs: {doc_ids}")
-            
-            # Step 4: Fetch full Document objects from PostgreSQL
-            documents = (
-                db.query(Document)
-                .filter(Document.id.in_(doc_ids))
-                .all()
-            )
-            
-            print(f"[RAG] Fetched {len(documents)} documents from PostgreSQL")
-            
-            return documents
-            
+            metadatas = (chroma_results or {}).get("metadatas") or [[]]
+            metadatas = metadatas[0] if metadatas else []
+            logger.info(f"[RAG] Chroma returned {len(metadatas)} document metas")
+
+            doc_ids: list = []
+            for md in metadatas:
+                did = _safe_int(md.get("id"))
+                if did is not None:
+                    doc_ids.append(did)
+                else:
+                    logger.warning(f"[RAG] dropping doc with invalid id meta: {md}")
+
+            if doc_ids:
+                logger.info(f"[RAG] semantic doc ids -> {doc_ids}")
+                documents = (
+                    db.query(Document)
+                    .filter(Document.id.in_(doc_ids))
+                    .all()
+                )
+                # preserve Chroma order
+                order = {d: i for i, d in enumerate(doc_ids)}
+                documents.sort(key=lambda d: order.get(d.id, 1_000_000))
         except Exception as e:
-            print(f"[RAG ERROR] Document search failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return []
+            logger.exception(f"[RAG] document semantic search failed: {e}")
+            documents = []
+
+        # ---- SQL fallback ----
+        if not documents:
+            keywords = _extract_keywords(query)
+            logger.info(f"[RAG] doc SQL fallback | keywords={keywords}")
+            if keywords:
+                try:
+                    name_filters = [
+                        Document.name.ilike(f"%{kw}%")
+                        for kw in keywords
+                    ]
+                    content_filters = [
+                        DocumentContent.content.ilike(f"%{kw}%")
+                        for kw in keywords
+                    ]
+                    documents = (
+                        db.query(Document)
+                        .outerjoin(
+                            DocumentContent,
+                            Document.id == DocumentContent.document_id,
+                        )
+                        .filter(or_(*name_filters, *content_filters))
+                        .distinct()
+                        .limit(top_k)
+                        .all()
+                    )
+                except Exception as e:
+                    logger.exception(f"[RAG] doc SQL fallback failed: {e}")
+                    documents = []
+
+        logger.info(f"[RAG] search_documents -> {len(documents)} docs")
+        return documents
 
     @staticmethod
-    def search_emails(
-        query: str,
-        db: Session,
-        top_k: int = 5
-    ) -> list:
-        """
-        Search for emails using semantic similarity.
-        
-        Returns: List of full Email objects
-        """
+    def search_emails(query: str, db: Session, top_k: int = 5) -> list:
+        logger.info(f"[RAG] search_emails | query={query!r} top_k={top_k}")
+        emails: list = []
+
+        # ---- Semantic (Chroma) ----
         try:
-            print(f"[RAG] Searching emails for: {query}")
-            
-            # Step 1: Generate embedding
             embedding = EmbeddingService.embed(query)
-            print(f"[RAG] Embedding generated (dims: {len(embedding)})")
-            
-            # Step 2: Search Chroma with type filter
             chroma_results = collection.query(
                 query_embeddings=[embedding],
                 n_results=top_k,
-                where={"type": "email"}
+                where={"type": {"$eq": "email"}},
             )
-            
-            if not chroma_results or not chroma_results["metadatas"][0]:
-                print("[RAG] No email results from Chroma")
-                return []
-            
-            print(f"[RAG] Found {len(chroma_results['metadatas'][0])} emails in Chroma")
-            
-            # Step 3: Extract email IDs from metadata
-            email_ids = []
-            for metadata in chroma_results["metadatas"][0]:
-                try:
-                    email_id = int(metadata.get("id"))
-                    email_ids.append(email_id)
-                except (ValueError, TypeError):
-                    print(f"[RAG WARNING] Invalid email ID in metadata: {metadata}")
-                    continue
-            
-            if not email_ids:
-                print("[RAG] No valid email IDs extracted")
-                return []
-            
-            print(f"[RAG] Extracted IDs: {email_ids}")
-            
-            # Step 4: Fetch full Email objects from PostgreSQL
-            emails = (
-                db.query(Email)
-                .filter(Email.id.in_(email_ids))
-                .all()
-            )
-            
-            print(f"[RAG] Fetched {len(emails)} emails from PostgreSQL")
-            
-            return emails
-            
+            metadatas = (chroma_results or {}).get("metadatas") or [[]]
+            metadatas = metadatas[0] if metadatas else []
+            logger.info(f"[RAG] Chroma returned {len(metadatas)} email metas")
+
+            email_ids: list = []
+            for md in metadatas:
+                eid = _safe_int(md.get("id"))
+                if eid is not None:
+                    email_ids.append(eid)
+                else:
+                    logger.warning(f"[RAG] dropping email with invalid id meta: {md}")
+
+            if email_ids:
+                logger.info(f"[RAG] semantic email ids -> {email_ids}")
+                emails = (
+                    db.query(Email)
+                    .filter(Email.id.in_(email_ids))
+                    .all()
+                )
+                order = {e: i for i, e in enumerate(email_ids)}
+                emails.sort(key=lambda e: order.get(e.id, 1_000_000))
         except Exception as e:
-            print(f"[RAG ERROR] Email search failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return []
+            logger.exception(f"[RAG] email semantic search failed: {e}")
+            emails = []
+
+        # ---- SQL fallback ----
+        if not emails:
+            keywords = _extract_keywords(query)
+            logger.info(f"[RAG] email SQL fallback | keywords={keywords}")
+            if keywords:
+                try:
+                    filters = []
+                    for kw in keywords:
+                        like = f"%{kw}%"
+                        filters.extend([
+                            Email.subject.ilike(like),
+                            Email.sender.ilike(like),
+                            Email.body.ilike(like),
+                        ])
+                    emails = (
+                        db.query(Email)
+                        .filter(or_(*filters))
+                        .order_by(Email.id.desc())
+                        .limit(top_k)
+                        .all()
+                    )
+                except Exception as e:
+                    logger.exception(f"[RAG] email SQL fallback failed: {e}")
+                    emails = []
+
+        logger.info(f"[RAG] search_emails -> {len(emails)} emails")
+        return emails
 
     @staticmethod
-    def search(
-        query: str,
-        db: Session,
-        top_k: int = 5
-    ) -> dict:
-        """
-        Unified search for both documents and emails.
-        
-        Returns:
-        {
-            "documents": [Document, ...],
-            "emails": [Email, ...]
-        }
-        """
-        print(f"\n[RAG] ========== UNIFIED SEARCH START ==========")
-        print(f"[RAG] Query: {query}")
-        print(f"[RAG] Top K: {top_k}")
-        
+    def search(query: str, db: Session, top_k: int = 5) -> dict:
+        logger.info(f"[RAG] ===== UNIFIED SEARCH START | q={query!r} k={top_k} =====")
         documents = RetrievalService.search_documents(query, db, top_k)
         emails = RetrievalService.search_emails(query, db, top_k)
-        
-        result = {
-            "documents": documents,
-            "emails": emails
-        }
-        
-        print(f"[RAG] ========== UNIFIED SEARCH END ==========")
-        print(f"[RAG] Results: {len(documents)} docs, {len(emails)} emails\n")
-        
-        return result
+        logger.info(
+            f"[RAG] ===== UNIFIED SEARCH END | docs={len(documents)} emails={len(emails)} ====="
+        )
+        return {"documents": documents, "emails": emails}
