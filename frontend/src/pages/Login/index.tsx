@@ -40,9 +40,9 @@ export default function Login() {
       {/* Header */}
       <header className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 lg:px-8">
         <div className="flex items-center gap-4">
-          <img 
-            src="https://via.placeholder.com/50" 
-            alt="riidl logo"
+          <img
+            src="/riidl_logo.png"
+            alt="RIIDL"
             className="h-12 w-auto"
           />
           <div>
@@ -66,7 +66,7 @@ export default function Login() {
             {/* Badge */}
             <div className="inline-flex items-center gap-2 rounded-full border border-[#A61E22]/20 bg-white/70 px-3.5 py-2 text-sm font-medium text-[#A61E22] shadow-sm backdrop-blur hover:border-[#A61E22]/40 transition-all">
               <Sparkles size={16} />
-              AI-Powered Intelligence
+              Accessing Data across RIIDL
             </div>
 
             {/* Headline */}

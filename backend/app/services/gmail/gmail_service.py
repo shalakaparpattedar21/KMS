@@ -6,13 +6,6 @@ from email.mime.text import MIMEText
 
 
 class GmailService:
-    """
-    Service for Gmail actions:
-    - Send email
-    - Reply to email
-    - Forward email
-    - Create draft
-    """
 
     @staticmethod
     def send_email(

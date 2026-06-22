@@ -50,15 +50,14 @@ export default function TopNavbar() {
       <div className="flex h-full items-center justify-between px-5 md:px-8">
         <div className="flex min-w-0 items-center gap-6 lg:gap-10">
           <Link to="/search" className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#A61E22] text-sm font-black text-white shadow-md shadow-[#A61E22]/20">
-              R
-            </div>
+           <img
+  src="/riidl_logo.png"
+  alt="RIIDL"
+  className="h-12 w-auto"
+/>
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#A61E22]">
-                RIIDL
-              </p>
+              
               <h1 className="truncate text-sm font-semibold text-zinc-950 sm:text-base">
-                Enterprise KMS
               </h1>
             </div>
           </Link>

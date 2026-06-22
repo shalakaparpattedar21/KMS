@@ -1,6 +1,5 @@
 import logging
 from sqlalchemy.orm import Session
-
 from app.services.rag.retrieval_service import RetrievalService
 
 logger = logging.getLogger(__name__)

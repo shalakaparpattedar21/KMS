@@ -2,6 +2,8 @@ import json
 import logging
 import re
 
+from app.services.ai.context_builder import ContextBuilder
+from app.services.ai.llm_service import LLMService
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import desc
@@ -93,12 +95,6 @@ def build_context(documents, emails) -> str:
 
     return f"=== DOCUMENTS ===\n{document_context}\n\n=== EMAILS ===\n{email_context}"
 
-
-# -----------------------------------------------------------------------
-# Endpoints
-# -----------------------------------------------------------------------
-
-
 @router.post("/sessions")
 def create_session(db: Session = Depends(get_db)):
     session = ChatSession(title="New Chat")
@@ -119,12 +115,9 @@ def send_message(
     request: SendMessageRequest,
     db: Session = Depends(get_db),
 ):
-    # --- Validate session ---
     session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
-
-    # --- Save user message ---
     user_message = ChatMessage(
         session_id=session_id,
         role="user",
@@ -134,8 +127,6 @@ def send_message(
     db.commit()
 
     question = request.message or ""
-
-    # Detect intent
     intent = IntentService.detect(question)
     sender_name = IntentService.extract_sender(question)
 
@@ -144,8 +135,6 @@ def send_message(
         f"intent={intent['intent']} sender_name={sender_name!r} "
         f"follow_up={is_follow_up(question)}"
     )
-
-    # --- Conversation history ---
     history = (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == session_id)
@@ -156,9 +145,6 @@ def send_message(
         f"{msg.role}: {msg.content}\n" for msg in history[:-1]
     )
 
-    # -----------------------------------------------------------------------
-    # SENDER SEARCH PATH
-    # -----------------------------------------------------------------------
     if intent["intent"] == "search_sender" and not is_follow_up(question):
         if not sender_name:
             sender_name = " ".join(extract_keywords(question)) or question
@@ -172,13 +158,11 @@ def send_message(
             .limit(15)
             .all()
         )
-
-        # Fallback to unified search if no results
         if not emails:
             logger.info(
                 "[CHAT] sender ILIKE empty -> falling back to UnifiedRetriever"
             )
-            retrieval_results = UnifiedRetriever.search(question, db, top_k=10)
+            retrieval_results = UnifiedRetriever.search(question, db, top_k=4)
             emails = retrieval_results["emails"]
 
         logger.info(f"[CHAT] sender search -> {len(emails)} emails")
@@ -210,10 +194,6 @@ def send_message(
         return StreamingResponse(
             stream_sender_results(), media_type="text/event-stream"
         )
-
-    # -----------------------------------------------------------------------
-    # SEMANTIC / DIRECT PATH
-    # -----------------------------------------------------------------------
     if not is_follow_up(question):
         retrieval_results = UnifiedRetriever.search(question, db, top_k=10)
         documents = retrieval_results["documents"]
@@ -235,40 +215,14 @@ def send_message(
             )
 
         # EMAILS TAKE PRIORITY
-        if emails:
-            email = emails[0]
-            session.last_email_id = email.id
-            db.commit()
+        context = ContextBuilder.build(
+            retrieval_results
+        )
 
-            answer = f"""
-━━━━━━━━━━━━━━━━━━━━
-
-SUBJECT:
-{email.subject}
-
-FROM:
-{email.sender}
-
-TO:
-{email.recipient}
-
-DATE:
-{email.received_at}
-
-━━━━━━━━━━━━━━━━━━━━
-
-BODY:
-
-{email.body[:5000] if email.body else ''}
-
-━━━━━━━━━━━━━━━━━━━━
-"""
-        elif documents:
-            first_doc = documents[0]
-            answer = f"Relevant document found:\n\n{first_doc.name}"
-        else:
-            answer = "I could not find that information in the documents or emails."
-
+        answer = LLMService.answer(
+            question=question,
+            context=context
+        )
         def stream_direct():
             full_text = answer
             yield full_text
