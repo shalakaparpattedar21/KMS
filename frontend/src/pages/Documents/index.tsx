@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ExternalLink, File, FileSpreadsheet, FileText, Folder, Grid3X3, List, RefreshCw, Search } from "lucide-react";
 import AppHeader from "../../components/header/AppHeader";
 
 interface DriveFile {
@@ -15,21 +16,14 @@ interface DriveFile {
 
 const formatSize = (bytes?: number) => {
   if (!bytes) return "-";
-
   const kb = bytes / 1024;
-
-  if (kb < 1024) {
-    return `${kb.toFixed(1)} KB`;
-  }
-
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
   const mb = kb / 1024;
-
   return `${mb.toFixed(1)} MB`;
 };
 
 const formatDate = (date?: string) => {
   if (!date) return "-";
-
   return new Date(date).toLocaleDateString();
 };
 
@@ -37,43 +31,27 @@ const getFileIcon = (mimeType: string) => {
   if (mimeType.includes("folder")) return "folder";
   if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) return "spreadsheet";
   if (mimeType.includes("pdf")) return "pdf";
-  if (mimeType.includes("image")) return "image";
-  if (mimeType.includes("video")) return "video";
   if (mimeType.includes("document") || mimeType.includes("word")) return "document";
   return "file";
 };
 
 const FileIcon = ({ type, size = 40 }: { type: string; size?: number }) => {
-  const icons: Record<string, { bg: string; color: string; label: string }> = {
-    folder:      { bg: "#FEF3C7", color: "#D97706", label: "DIR" },
-    spreadsheet: { bg: "#D1FAE5", color: "#059669", label: "XLS" },
-    pdf:         { bg: "#FEE2E2", color: "#DC2626", label: "PDF" },
-    image:       { bg: "#EDE9FE", color: "#7C3AED", label: "IMG" },
-    video:       { bg: "#DBEAFE", color: "#2563EB", label: "VID" },
-    document:    { bg: "#DBEAFE", color: "#2563EB", label: "DOC" },
-    file:        { bg: "#F3F4F6", color: "#6B7280", label: "FILE" },
+  const iconClass = "text-[#A61E22]";
+  const iconProps = { size: Math.max(18, size * 0.46), className: iconClass };
+  const icons: Record<string, ReactNode> = {
+    folder: <Folder {...iconProps} />,
+    spreadsheet: <FileSpreadsheet {...iconProps} />,
+    pdf: <FileText {...iconProps} />,
+    document: <FileText {...iconProps} />,
+    file: <File {...iconProps} />,
   };
-
-  const { bg, color, label } = icons[type] || icons.file;
 
   return (
     <div
-      style={{
-        width: size,
-        height: size,
-        background: bg,
-        borderRadius: 8,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 700,
-        fontSize: size * 0.28,
-        color,
-        letterSpacing: "0.03em",
-        flexShrink: 0,
-      }}
+      className="flex shrink-0 items-center justify-center rounded-lg border border-[#A61E22]/10 bg-[#A61E22]/8"
+      style={{ width: size, height: size }}
     >
-      {label}
+      {icons[type] || icons.file}
     </div>
   );
 };
@@ -88,15 +66,11 @@ export default function Documents() {
 
   const fetchDocuments = async () => {
     try {
-      const res = await fetch(
-        "http://localhost:8000/api/documents/",
-        {
-          credentials: "include",
-        }
-      );
+      const res = await fetch("http://localhost:8000/api/documents/", {
+        credentials: "include",
+      });
 
       const data = await res.json();
-
       setFiles(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
@@ -104,20 +78,38 @@ export default function Documents() {
   };
 
   useEffect(() => {
-    fetchDocuments();
+    let active = true;
+
+    const loadInitialDocuments = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/documents/", {
+          credentials: "include",
+        });
+
+        const data = await res.json();
+        if (active) {
+          setFiles(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    loadInitialDocuments();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleSync = async () => {
     try {
       setLoading(true);
 
-      await fetch(
-        "http://localhost:8000/api/sync/start",
-        {
-          method: "POST",
-          credentials: "include",
-        }
-      );
+      await fetch("http://localhost:8000/api/sync/start", {
+        method: "POST",
+        credentials: "include",
+      });
 
       await fetchDocuments();
     } catch (error) {
@@ -128,378 +120,198 @@ export default function Documents() {
   };
 
   const filteredFiles = [...files]
-    .filter((file) =>
-      file.name.toLowerCase().includes(search.toLowerCase())
-    )
+    .filter((file) => file.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
-      if (sortBy === "name") {
-        return a.name.localeCompare(b.name);
-      }
-
-      if (sortBy === "size") {
-        return (b.size || 0) - (a.size || 0);
-      }
-
+      if (sortBy === "name") return a.name.localeCompare(b.name);
+      if (sortBy === "size") return (b.size || 0) - (a.size || 0);
       return 0;
     });
+
+  const docsCount = files.filter((f) => f.mime_type.includes("google-apps.document")).length;
+  const foldersCount = files.filter((f) => f.mime_type.includes("folder")).length;
+  const gridColumns = { small: "grid-cols-2 sm:grid-cols-4 lg:grid-cols-7", medium: "grid-cols-1 sm:grid-cols-3 lg:grid-cols-5", large: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" }[gridSize];
+  const iconSize = { small: 34, medium: 48, large: 64 }[gridSize];
 
   return (
     <>
       <AppHeader />
 
       <div className="space-y-6">
-
-        {/* Header */}
-        <div className="bg-white rounded-xl shadow p-6 flex items-center justify-between">
+        <section className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">
-              Documents
-            </h2>
-
-            <p className="text-gray-500 mt-1">
-              Browse and search files synced from Google Drive
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#A61E22]">
+              Document Discovery
             </p>
+            <h2 className="mt-1 text-2xl font-semibold text-zinc-950">Drive Documents</h2>
+            <p className="mt-1 text-sm text-zinc-500">Browse, sync, and open files connected from Google Drive.</p>
           </div>
 
           <button
             onClick={handleSync}
             disabled={loading}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#A61E22] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#A61E22]/15 transition hover:bg-[#8f181c] disabled:opacity-50"
           >
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             {loading ? "Syncing..." : "Sync Now"}
           </button>
-        </div>
+        </section>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
-
-          <div className="bg-white rounded-xl shadow p-4">
-            <p className="text-gray-500 text-sm">
-              Total Files
-            </p>
-
-            <h3 className="text-2xl font-bold">
-              {files.length}
-            </h3>
-          </div>
-
-          <div className="bg-white rounded-xl shadow p-4">
-            <p className="text-gray-500 text-sm">
-              Google Docs
-            </p>
-
-            <h3 className="text-2xl font-bold">
-              {
-                files.filter((f) =>
-                  f.mime_type.includes(
-                    "google-apps.document"
-                  )
-                ).length
-              }
-            </h3>
-          </div>
-
-          <div className="bg-white rounded-xl shadow p-4">
-            <p className="text-gray-500 text-sm">
-              Folders
-            </p>
-
-            <h3 className="text-2xl font-bold">
-              {
-                files.filter((f) =>
-                  f.mime_type.includes("folder")
-                ).length
-              }
-            </h3>
-          </div>
-
-        </div>
-
-        {/* Search + View Controls */}
-        <div className="bg-white rounded-xl shadow p-4 flex gap-4 items-center">
-
-          <input
-            type="text"
-            placeholder="Search documents..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 border rounded-lg p-3 outline-none"
-          />
-
-          {/* View mode toggle */}
-          <div className="flex gap-1 border rounded-lg p-1">
-
-            <button
-              onClick={() => setViewMode("table")}
-              title="List view"
-              className={`px-3 py-1.5 rounded text-sm font-medium transition ${
-                viewMode === "table"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-500 hover:bg-gray-100"
-              }`}
-            >
-              List
-            </button>
-
-            <button
-              onClick={() => setViewMode("grid")}
-              title="Grid view"
-              className={`px-3 py-1.5 rounded text-sm font-medium transition ${
-                viewMode === "grid"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-500 hover:bg-gray-100"
-              }`}
-            >
-              Grid
-            </button>
-
-          </div>
-
-          {/* Grid size toggle — only shown in grid mode */}
-          {viewMode === "grid" && (
-            <div className="flex gap-1 border rounded-lg p-1">
-
-              <button
-                onClick={() => setGridSize("small")}
-                title="Small icons"
-                className={`px-3 py-1.5 rounded text-sm font-medium transition ${
-                  gridSize === "small"
-                    ? "bg-gray-700 text-white"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                S
-              </button>
-
-              <button
-                onClick={() => setGridSize("medium")}
-                title="Medium icons"
-                className={`px-3 py-1.5 rounded text-sm font-medium transition ${
-                  gridSize === "medium"
-                    ? "bg-gray-700 text-white"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                M
-              </button>
-
-              <button
-                onClick={() => setGridSize("large")}
-                title="Large icons"
-                className={`px-3 py-1.5 rounded text-sm font-medium transition ${
-                  gridSize === "large"
-                    ? "bg-gray-700 text-white"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                L
-              </button>
-
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {[
+            ["Total Files", files.length],
+            ["Google Docs", docsCount],
+            ["Folders", foldersCount],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+              <p className="text-sm font-medium text-zinc-500">{label}</p>
+              <h3 className="mt-2 text-3xl font-semibold text-zinc-950">{value}</h3>
             </div>
-          )}
+          ))}
+        </section>
 
-        </div>
+        <section className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
+          <div className="relative flex-1">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Search documents..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="kms-focus w-full rounded-lg border border-zinc-200 bg-zinc-50 py-3 pl-10 pr-4 text-sm text-zinc-900 placeholder:text-zinc-400"
+            />
+          </div>
 
-        {/* Documents Table */}
-        <div className="bg-white rounded-xl shadow p-6">
+          <div className="flex shrink-0 gap-2">
+            <div className="flex rounded-lg border border-zinc-200 bg-zinc-50 p-1">
+              <button
+                onClick={() => setViewMode("table")}
+                title="List view"
+                className={`flex h-9 w-9 items-center justify-center rounded-md transition ${viewMode === "table" ? "bg-white text-[#A61E22] shadow-sm" : "text-zinc-500 hover:text-zinc-950"}`}
+              >
+                <List size={17} />
+              </button>
+              <button
+                onClick={() => setViewMode("grid")}
+                title="Grid view"
+                className={`flex h-9 w-9 items-center justify-center rounded-md transition ${viewMode === "grid" ? "bg-white text-[#A61E22] shadow-sm" : "text-zinc-500 hover:text-zinc-950"}`}
+              >
+                <Grid3X3 size={17} />
+              </button>
+            </div>
 
-          <h3 className="font-semibold text-lg mb-4">
-            Drive Documents
-          </h3>
-
-          {viewMode === "table" ? (
-
-            <div className="overflow-x-auto">
-
-              <table className="w-full">
-
-              <thead>
-                <tr className="border-b text-left bg-gray-50">
-
-                  <th
-                    className="p-3 cursor-pointer"
-                    onClick={() => setSortBy("name")}
+            {viewMode === "grid" && (
+              <div className="flex rounded-lg border border-zinc-200 bg-zinc-50 p-1">
+                {(["small", "medium", "large"] as const).map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => setGridSize(size)}
+                    className={`h-9 rounded-md px-3 text-xs font-semibold uppercase transition ${gridSize === size ? "bg-white text-[#A61E22] shadow-sm" : "text-zinc-500 hover:text-zinc-950"}`}
                   >
-                    Name ↑↓
-                  </th>
-
-                  <th className="p-3">
-                    Type
-                  </th>
-
-                  <th
-                    className="p-3 cursor-pointer"
-                    onClick={() => setSortBy("size")}
-                  >
-                    Size ↑↓
-                  </th>
-
-                  <th className="p-3">
-                    Modified
-                  </th>
-
-                  <th className="p-3">
-                    Owner
-                  </th>
-
-                  <th className="p-3">
-                    Status
-                  </th>
-
-                  <th className="p-3">
-                    Actions
-                  </th>
-
-                </tr>
-              </thead>
-
-              <tbody>
-
-                {filteredFiles.map((file) => (
-
-                  <tr
-                    key={file.id}
-                    className="border-b hover:bg-gray-50"
-                  >
-
-                    <td className="p-3 font-medium">
-                      {file.name}
-                    </td>
-
-                    <td className="p-3 text-gray-600">
-                      {file.mime_type}
-                    </td>
-
-                    <td className="p-3">
-                      {formatSize(file.size)}
-                    </td>
-
-                    <td className="p-3">
-                      {formatDate(file.modified_time)}
-                    </td>
-
-                    <td className="p-3">
-                      {file.owner_email || "-"}
-                    </td>
-
-                    <td className="p-3">
-
-                      <span
-                        className="
-                          px-2
-                          py-1
-                          rounded-full
-                          text-sm
-                          bg-green-100
-                          text-green-700
-                        "
-                      >
-                        {file.sync_status || "synced"}
-                      </span>
-
-                    </td>
-
-                    <td className="p-3">
-
-                      {file.web_view_link ? (
-                        <a
-                          href={file.web_view_link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="
-                            bg-blue-600
-                            text-white
-                            px-3
-                            py-2
-                            rounded-lg
-                            hover:bg-blue-700
-                          "
-                        >
-                          View
-                        </a>
-                      ) : (
-                        <span className="text-gray-400">
-                          N/A
-                        </span>
-                      )}
-
-                    </td>
-
-                  </tr>
-
+                    {size[0]}
+                  </button>
                 ))}
+              </div>
+            )}
+          </div>
+        </section>
 
-              </tbody>
-
-            </table>
-
+        <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+            <div>
+              <h3 className="text-base font-semibold text-zinc-950">Search Results</h3>
+              <p className="text-sm text-zinc-500">{filteredFiles.length} visible documents</p>
             </div>
+          </div>
 
-          ) : (
-
-            (() => {
-              const cols = { small: 7, medium: 5, large: 3 }[gridSize];
-              const iconSize = { small: 32, medium: 48, large: 64 }[gridSize];
-              const textSize = { small: "text-xs", medium: "text-sm", large: "text-base" }[gridSize];
-
-              return (
-                <div
-                  className="grid gap-3"
-                  style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
-                >
-
+          {filteredFiles.length === 0 ? (
+            <div className="flex min-h-72 flex-col items-center justify-center p-8 text-center">
+              <FileText size={36} className="mb-3 text-zinc-300" />
+              <h4 className="text-base font-semibold text-zinc-900">No documents found</h4>
+              <p className="mt-2 max-w-sm text-sm text-zinc-500">Try a different search term or sync Drive again.</p>
+            </div>
+          ) : viewMode === "table" ? (
+            <div className="overflow-x-auto kms-scrollbar">
+              <table className="w-full min-w-[900px] text-left text-sm">
+                <thead className="bg-zinc-50 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  <tr>
+                    <th className="px-5 py-3 cursor-pointer" onClick={() => setSortBy("name")}>Name</th>
+                    <th className="px-5 py-3">Type</th>
+                    <th className="px-5 py-3 cursor-pointer" onClick={() => setSortBy("size")}>Size</th>
+                    <th className="px-5 py-3">Modified</th>
+                    <th className="px-5 py-3">Owner</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
                   {filteredFiles.map((file) => (
-
-                    <div
-                      key={file.id}
-                      className="border rounded-xl p-3 hover:shadow-md transition cursor-pointer flex flex-col gap-2"
-                    >
-
-                      <FileIcon
-                        type={getFileIcon(file.mime_type)}
-                        size={iconSize}
-                      />
-
-                      <h4 className={`font-medium truncate ${textSize}`}>
-                        {file.name}
-                      </h4>
-
-                      {gridSize !== "small" && (
-                        <>
-                          <p className="text-xs text-gray-500">
-                            {formatSize(file.size)}
-                          </p>
-
-                          <p className="text-xs text-gray-400">
-                            {formatDate(file.modified_time)}
-                          </p>
-                        </>
-                      )}
-
-                      {gridSize === "large" && file.web_view_link && (
-                        <a
-                          href={file.web_view_link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm text-center hover:bg-blue-700"
-                        >
-                          Open
-                        </a>
-                      )}
-
-                    </div>
-
+                    <tr key={file.id} className="transition hover:bg-[#A61E22]/[0.025]">
+                      <td className="px-5 py-4">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <FileIcon type={getFileIcon(file.mime_type)} size={38} />
+                          <span className="truncate font-medium text-zinc-950">{file.name}</span>
+                        </div>
+                      </td>
+                      <td className="max-w-xs truncate px-5 py-4 text-zinc-500">{file.mime_type}</td>
+                      <td className="px-5 py-4 text-zinc-700">{formatSize(file.size)}</td>
+                      <td className="px-5 py-4 text-zinc-700">{formatDate(file.modified_time)}</td>
+                      <td className="max-w-[180px] truncate px-5 py-4 text-zinc-600">{file.owner_email || "-"}</td>
+                      <td className="px-5 py-4">
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                          {file.sync_status || "synced"}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        {file.web_view_link ? (
+                          <a
+                            href={file.web_view_link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 transition hover:border-[#A61E22]/30 hover:text-[#A61E22]"
+                          >
+                            View <ExternalLink size={14} />
+                          </a>
+                        ) : (
+                          <span className="text-zinc-400">N/A</span>
+                        )}
+                      </td>
+                    </tr>
                   ))}
-
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className={`grid gap-3 p-5 ${gridColumns}`}>
+              {filteredFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="group flex min-w-0 flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#A61E22]/25 hover:shadow-lg hover:shadow-zinc-950/5"
+                >
+                  <FileIcon type={getFileIcon(file.mime_type)} size={iconSize} />
+                  <div className="min-w-0">
+                    <h4 className="truncate text-sm font-semibold text-zinc-950">{file.name}</h4>
+                    {gridSize !== "small" && (
+                      <p className="mt-1 text-xs text-zinc-500">{formatSize(file.size)} - {formatDate(file.modified_time)}</p>
+                    )}
+                  </div>
+                  {gridSize === "large" && file.web_view_link && (
+                    <a
+                      href={file.web_view_link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#A61E22]"
+                    >
+                      Open <ExternalLink size={14} />
+                    </a>
+                  )}
                 </div>
-              );
-            })()
-
+              ))}
+            </div>
           )}
-
-        </div>
-
+        </section>
       </div>
     </>
   );
 }
+
+

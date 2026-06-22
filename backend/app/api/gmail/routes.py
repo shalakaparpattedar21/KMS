@@ -4,7 +4,7 @@ from fastapi import (
     Depends
 )
 from sqlalchemy import or_
-
+from app.services.rag.index_service import (IndexService)
 from app.models.email import Email
 from app.database.session import get_db
 from sqlalchemy.orm import Session
@@ -159,6 +159,19 @@ def sync_gmail(
         )
 
         db.add(email)
+
+        db.flush()
+
+        IndexService.index_email(
+            email_id=email.id,
+            subject=email.subject,
+            sender=email.sender,
+            body=email.body,
+            received_at=str(email.received_at)
+            if email.received_at
+            else None
+        )
+
         synced += 1
 
     db.commit()
@@ -197,3 +210,42 @@ def search_emails(
         .all()
     )
     return results
+@router.post("/reindex-emails")
+def reindex_emails(
+    db: Session = Depends(get_db)
+):
+
+    emails = db.query(Email).all()
+
+    for email in emails:
+
+        IndexService.index_email(
+            email_id=email.id,
+            subject=email.subject,
+            sender=email.sender,
+            body=email.body,
+            received_at=str(email.received_at)
+            if email.received_at
+            else None
+        )
+
+    return {
+        "emails": len(emails)
+    }
+@router.get("/debug-senders")
+def debug_senders(
+    db: Session = Depends(get_db)
+):
+    emails = (
+        db.query(Email)
+        .limit(20)
+        .all()
+    )
+
+    return [
+        {
+            "id": e.id,
+            "sender": e.sender
+        }
+        for e in emails
+    ]

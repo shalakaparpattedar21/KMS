@@ -10,9 +10,7 @@ from app.api.search.routes import router as search_router
 from app.api.chat.routes import router as chat_router
 from app.api.gmail.routes import ( router as gmail_router)
 from app.api.gmail.actions import router as gmail_actions_router
-from app.api.gmail.email_details import (
-    router as gmail_email_router
-)
+from app.api.gmail.email_details import (router as gmail_email_router)
 
 app = FastAPI()
 app.include_router(documents_router)

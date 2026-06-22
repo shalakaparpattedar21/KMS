@@ -58,7 +58,7 @@ def forward_email(
         recipient=request_data.recipient,
         content=request_data.content or ""
     )
-
+    print(result)
     return result
 
 
@@ -79,6 +79,7 @@ def send_email(
         subject=request_data.subject,
         body=request_data.body
     )
+    print(result)
 
     return result
 

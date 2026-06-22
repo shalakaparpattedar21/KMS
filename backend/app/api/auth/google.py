@@ -27,6 +27,7 @@ oauth.register(
         "https://www.googleapis.com/auth/drive.readonly "
         "https://www.googleapis.com/auth/gmail.modify "
         "https://www.googleapis.com/auth/gmail.compose "
+        "https://www.googleapis.com/auth/gmail.send "
     )
 }
 )
@@ -94,7 +95,7 @@ async def google_callback(request: Request):
             db.close()
 
     return RedirectResponse(
-        url="http://localhost:5173/dashboard"
+        url="http://localhost:5173/search"
     )
 @router.get("/me")
 async def me(request: Request):
