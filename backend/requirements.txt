@@ -14,7 +14,6 @@ google-api-python-client
 google-auth
 google-auth-httplib2
 
-sentence-transformers
 chromadb
 
 python-docx
