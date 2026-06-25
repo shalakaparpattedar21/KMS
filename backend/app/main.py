@@ -57,7 +57,7 @@ app.add_middleware(
     session_cookie="session",
     max_age=8 * 60 * 60,   # 8 hours
     https_only=settings.HTTPS_ONLY,
-    same_site="lax",
+    same_site="none",
 )
 
 
