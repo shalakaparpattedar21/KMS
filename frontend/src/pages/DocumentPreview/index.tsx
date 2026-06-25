@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { FileText, Loader2 } from "lucide-react";
+import { API_URL } from "../../services/api.ts";
 
 interface DocumentPreviewData {
   name: string;
@@ -12,7 +13,7 @@ export default function DocumentPreview() {
   const [document, setDocument] = useState<DocumentPreviewData | null>(null);
 
   useEffect(() => {
-    fetch(`http://localhost:8000/api/documents/preview/${id}`)
+    fetch(`${API_URL}/api/documents/preview/${id}`, { credentials: "include" })
       .then((res) => res.json())
       .then((data) => setDocument(data));
   }, [id]);
@@ -57,4 +58,3 @@ export default function DocumentPreview() {
     </div>
   );
 }
-

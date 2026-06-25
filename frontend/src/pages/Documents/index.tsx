@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ExternalLink, File, FileSpreadsheet, FileText, Folder, Grid3X3, List, RefreshCw, Search } from "lucide-react";
 import AppHeader from "../../components/header/AppHeader";
+import { API_URL } from "../../services/api.ts";
 
 interface DriveFile {
   id: number;
@@ -66,10 +67,7 @@ export default function Documents() {
 
   const fetchDocuments = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/documents/", {
-        credentials: "include",
-      });
-
+      const res = await fetch(`${API_URL}/api/documents/`, { credentials: "include" });
       const data = await res.json();
       setFiles(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -82,10 +80,7 @@ export default function Documents() {
 
     const loadInitialDocuments = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/documents/", {
-          credentials: "include",
-        });
-
+        const res = await fetch(`${API_URL}/api/documents/`, { credentials: "include" });
         const data = await res.json();
         if (active) {
           setFiles(Array.isArray(data) ? data : []);
@@ -106,14 +101,23 @@ export default function Documents() {
     try {
       setLoading(true);
 
-      await fetch("http://localhost:8000/api/sync/start", {
+      const response = await fetch(`${API_URL}/api/sync/start`, {
         method: "POST",
         credentials: "include",
       });
 
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.detail || "Please connect a Google account first.");
+        return;
+      }
+
       await fetchDocuments();
+
     } catch (error) {
       console.error(error);
+      alert("Sync failed");
     } finally {
       setLoading(false);
     }
@@ -313,5 +317,3 @@ export default function Documents() {
     </>
   );
 }
-
-

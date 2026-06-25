@@ -14,6 +14,7 @@ import {
   User,
 } from "lucide-react";
 import EmailModal from "../../components/email/EmailModal";
+import { API_URL } from "../../services/api.ts";
 
 interface Session {
   id: number;
@@ -60,7 +61,7 @@ export default function ChatUI() {
 
   const loadSessions = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/chat/sessions", {
+      const response = await fetch(`${API_URL}/api/chat/sessions`, {
         credentials: "include",
       });
       const data = await response.json();
@@ -78,15 +79,13 @@ export default function ChatUI() {
     if (!confirmed) return;
 
     try {
-      await fetch(`http://localhost:8000/api/chat/sessions/${sessionId}`, {
+      await fetch(`${API_URL}/api/chat/sessions/${sessionId}`, {
         method: "DELETE",
         credentials: "include",
       });
 
       const updatedSessions = await (
-        await fetch("http://localhost:8000/api/chat/sessions", {
-          credentials: "include",
-        })
+        await fetch(`${API_URL}/api/chat/sessions`, { credentials: "include" })
       ).json();
 
       setSessions(updatedSessions);
@@ -103,10 +102,9 @@ export default function ChatUI() {
 
   const openEmail = async (emailId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/gmail/email/${emailId}`, {
+      const response = await fetch(`${API_URL}/api/gmail/email/${emailId}`, {
         credentials: "include",
       });
-
       const data = await response.json();
       setSelectedEmail(data);
     } catch (err) {
@@ -116,7 +114,7 @@ export default function ChatUI() {
 
   const createNewChat = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/chat/sessions", {
+      const response = await fetch(`${API_URL}/api/chat/sessions`, {
         method: "POST",
         credentials: "include",
       });
@@ -133,7 +131,7 @@ export default function ChatUI() {
     setSources({ documents: [], emails: [] });
     try {
       const response = await fetch(
-        `http://localhost:8000/api/chat/sessions/${session.id}/messages`,
+        `${API_URL}/api/chat/sessions/${session.id}/messages`,
         { credentials: "include" }
       );
       const data = await response.json();
@@ -158,7 +156,7 @@ export default function ChatUI() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/chat/sessions/${selectedSession.id}/messages`,
+        `${API_URL}/api/chat/sessions/${selectedSession.id}/messages`,
         {
           method: "POST",
           credentials: "include",
@@ -226,7 +224,7 @@ export default function ChatUI() {
 
     const loadInitialSessions = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/chat/sessions", {
+        const response = await fetch(`${API_URL}/api/chat/sessions`, {
           credentials: "include",
         });
         const data = await response.json();
@@ -240,7 +238,7 @@ export default function ChatUI() {
           setSources({ documents: [], emails: [] });
 
           const messagesResponse = await fetch(
-            `http://localhost:8000/api/chat/sessions/${session.id}/messages`,
+            `${API_URL}/api/chat/sessions/${session.id}/messages`,
             { credentials: "include" }
           );
           const messagesData = await messagesResponse.json();
@@ -524,6 +522,3 @@ export default function ChatUI() {
     </div>
   );
 }
-
-
-

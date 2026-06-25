@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { CalendarDays, ExternalLink, Forward, Mail, Reply, Send, UserRound, X } from "lucide-react";
+import { API_URL } from "../../services/api.ts";
 
 interface EmailDetails {
   subject: string;
@@ -24,12 +25,10 @@ export default function EmailModal({ email, onClose }: Props) {
   const [forwardText, setForwardText] = useState("");
 
   const sendReply = async () => {
-    const response = await fetch("http://localhost:8000/api/gmail/actions/reply", {
+    const response = await fetch(`${API_URL}/api/gmail/actions/reply`, {
       method: "POST",
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message_id: email.gmail_message_id,
         thread_id: email.gmail_thread_id,
@@ -38,8 +37,6 @@ export default function EmailModal({ email, onClose }: Props) {
     });
 
     const data = await response.json();
-
-    console.log(data);
 
     if (data.id) {
       alert("Reply Sent Successfully");
@@ -50,12 +47,10 @@ export default function EmailModal({ email, onClose }: Props) {
   };
 
   const sendForward = async () => {
-    const response = await fetch("http://localhost:8000/api/gmail/actions/forward", {
+    const response = await fetch(`${API_URL}/api/gmail/actions/forward`, {
       method: "POST",
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message_id: email.gmail_message_id,
         recipient: forwardTo,
@@ -64,8 +59,6 @@ export default function EmailModal({ email, onClose }: Props) {
     });
 
     const data = await response.json();
-
-    console.log(data);
 
     if (data.id) {
       alert("Forwarded Successfully");
@@ -229,4 +222,3 @@ export default function EmailModal({ email, onClose }: Props) {
     </div>
   );
 }
-
