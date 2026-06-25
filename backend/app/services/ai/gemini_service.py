@@ -1,12 +1,15 @@
-import google.generativeai as genai
-from app.core.config import settings
-genai.configure(
-    api_key=settings.GEMINI_API_KEY
-)
+import logging
 
-model = genai.GenerativeModel(
-    "gemini-2.5-flash"
-)
+import google.generativeai as genai
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+if settings.GEMINI_API_KEY:
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+
+model = genai.GenerativeModel("gemini-2.5-flash") if settings.GEMINI_API_KEY else None
 
 
 class GeminiService:
@@ -16,10 +19,9 @@ class GeminiService:
         question: str,
         context: str,
         conversation_history: str = ""
-    ):
+    ) -> str:
 
-        prompt = f"""
-You are an Enterprise Knowledge Assistant.
+        prompt = f"""You are an Enterprise Knowledge Assistant.
 
 You help users understand information found in company documents.
 
@@ -52,38 +54,48 @@ Document Context:
 Current Question:
 {question}
 
-Provide a helpful, concise answer.
-"""
+Provide a clear, professional answer.
 
-        print(f"[GEMINI] Generating response for: {question}\n")
+If the answer exists in the supplied document context,
+summarize it naturally instead of copying sentences.
+
+If the information is unavailable and this is NOT a follow-up question,
+reply exactly:
+
+"I could not find that information in the available documents."""
+
+        logger.debug(f"[GEMINI] Generating response for: {question!r}")
 
         return prompt
 
     @staticmethod
     def stream_answer(prompt: str):
-        """Stream the response from Gemini with error handling"""
+        """Stream the response from Gemini with error handling."""
+        if model is None:
+            yield "AI responses unavailable — GEMINI_API_KEY is not configured."
+            return
+
         try:
-            response = model.generate_content(
-                prompt,
-                stream=True
-            )
-            
-            full_text = ""
+            response = model.generate_content(prompt, stream=True)
+
             for chunk in response:
-                if chunk.text:
-                    full_text += chunk.text
-                    yield chunk.text
-            
-            print(f"[GEMINI] Streaming complete\n")
-        
+                text = getattr(chunk, "text", "")
+                if text:
+                    yield text
+
+            logger.debug("[GEMINI] Streaming complete")
+
         except Exception as e:
             error_msg = str(e)
-        
+
             if "RESOURCE_EXHAUSTED" in error_msg or "quota" in error_msg.lower():
-                fallback = "⚠️ API quota exceeded. Please try again in a minute or upgrade your plan: https://aistudio.google.com"
-                yield fallback
-                print(f"[GEMINI ERROR] Rate limit hit - returned fallback response\n")
+                fallback = (
+                    "AI service is temporarily unavailable because the usage quota has been reached. Please try again in a few minutes."
+                )
             else:
-                fallback = f"⚠️ Error: {error_msg[:100]}"
-                yield fallback
-                print(f"[GEMINI ERROR] {error_msg}\n")
+                fallback = (
+                "AI response temporarily unavailable. Please try again."
+            )
+
+            logger.error(f"[GEMINI ERROR] {error_msg}")
+            yield fallback

@@ -1,75 +1,39 @@
-from fastapi import (
-    APIRouter,
-    Request,
-    Depends
-)
+# app/api/gmail/routes.py
+#
+# The sync logic has been moved to GmailSyncService so it can be reused
+# from the OAuth callback (auto-sync on login) without duplicating code.
+# The POST /api/gmail/sync endpoint still works exactly as before —
+# it now just delegates to the shared service.
+
+from fastapi import APIRouter, Request, Depends
 from sqlalchemy import or_
-from app.services.rag.index_service import (IndexService)
-from app.models.email import Email
-from app.database.session import get_db
 from sqlalchemy.orm import Session
-import base64
+
 import requests
+
+from app.database.session import get_db
+from app.models.email import Email
+from app.services.rag.index_service import IndexService
+from app.services.gmail.gmail_sync_service import GmailSyncService
 
 router = APIRouter(
     prefix="/api/gmail",
     tags=["Gmail"]
 )
 
-def get_header(headers, name):
-    """Extract header value by name"""
-    for header in headers:
-        if header["name"].lower() == name.lower():
-            return header["value"]
-    return None
 
-
-def extract_body(payload):
-    """Extract email body from Gmail payload"""
-    if payload.get("body", {}).get("data"):
-        return base64.urlsafe_b64decode(
-            payload["body"]["data"]
-        ).decode(
-            "utf-8",
-            errors="ignore"
-        )
-
-    parts = payload.get("parts", [])
-
-    for part in parts:
-        mime_type = part.get("mimeType")
-
-        if mime_type == "text/plain":
-            data = (
-                part.get("body", {})
-                .get("data")
-            )
-            if data:
-                return base64.urlsafe_b64decode(
-                    data
-                ).decode(
-                    "utf-8",
-                    errors="ignore"
-                )
-
-        if part.get("parts"):
-            body = extract_body(part)
-            if body:
-                return body
-
-    return ""
-
+# -----------------------------------------------------------------------
+# Utility / debug endpoints (unchanged)
+# -----------------------------------------------------------------------
 
 @router.get("/test")
 def test_gmail(request: Request):
     """Test Gmail API connection"""
     token = request.session.get("access_token")
-
     response = requests.get(
         "https://gmail.googleapis.com/gmail/v1/users/me/profile",
         headers={"Authorization": f"Bearer {token}"}
     )
-
     return response.json()
 
 
@@ -77,7 +41,6 @@ def test_gmail(request: Request):
 def get_messages(request: Request):
     """List recent Gmail messages"""
     token = request.session.get("access_token")
-
     response = requests.get(
         "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10",
         headers={"Authorization": f"Bearer {token}"}
@@ -89,95 +52,41 @@ def get_messages(request: Request):
 def get_message(message_id: str, request: Request):
     """Get full Gmail message details"""
     token = request.session.get("access_token")
-
     response = requests.get(
         f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
         headers={"Authorization": f"Bearer {token}"}
     )
-
     return response.json()
 
+
+# -----------------------------------------------------------------------
+# Sync endpoint — now delegates to GmailSyncService
+# -----------------------------------------------------------------------
 
 @router.post("/sync")
 def sync_gmail(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """Sync emails from Gmail to database"""
+    """
+    Manually sync emails from Gmail to the KMS database.
+    This is also called automatically on login via the OAuth callback.
+    """
     token = request.session.get("access_token")
     user_id = request.session.get("user_id")
 
-    headers = {"Authorization": f"Bearer {token}"}
-
-    messages_response = requests.get(
-        "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100",
-        headers=headers
+    result = GmailSyncService.sync(
+        access_token=token,
+        user_id=user_id,
+        db=db,
     )
 
-    messages = messages_response.json().get("messages", [])
-    synced = 0
+    return result
 
-    for msg in messages:
-        gmail_id = msg["id"]
 
-        # Check if already synced
-        existing = (
-            db.query(Email)
-            .filter(Email.gmail_message_id == gmail_id)
-            .first()
-        )
-
-        if existing:
-            continue
-
-        # Fetch full message
-        detail_response = requests.get(
-            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{gmail_id}",
-            headers=headers
-        )
-
-        email_data = detail_response.json()
-        payload = email_data.get("payload", {})
-        headers_list = payload.get("headers", [])
-
-        # ✅ Extract all metadata
-        subject = get_header(headers_list, "Subject")
-        sender = get_header(headers_list, "From")
-        recipient = get_header(headers_list, "To")
-        received_at = get_header(headers_list, "Date")
-        body = extract_body(payload)
-
-        email = Email(
-            gmail_message_id=gmail_id,
-            gmail_thread_id=email_data.get("threadId"),
-            subject=subject,
-            sender=sender,
-            recipient=recipient,
-            body=body,
-            received_at=received_at,
-            user_id=user_id
-        )
-
-        db.add(email)
-
-        db.flush()
-
-        IndexService.index_email(
-            email_id=email.id,
-            subject=email.subject,
-            sender=email.sender,
-            body=email.body,
-            received_at=str(email.received_at)
-            if email.received_at
-            else None
-        )
-
-        synced += 1
-
-    db.commit()
-
-    return {"synced": synced}
-
+# -----------------------------------------------------------------------
+# Read / search endpoints (unchanged)
+# -----------------------------------------------------------------------
 
 @router.get("/emails")
 def get_emails(db: Session = Depends(get_db)):
@@ -210,42 +119,30 @@ def search_emails(
         .all()
     )
     return results
-@router.post("/reindex-emails")
-def reindex_emails(
-    db: Session = Depends(get_db)
-):
 
+
+@router.post("/reindex-emails")
+def reindex_emails(db: Session = Depends(get_db)):
+    """Reindex all emails into Chroma (run after schema changes)"""
     emails = db.query(Email).all()
 
     for email in emails:
-
         IndexService.index_email(
             email_id=email.id,
             subject=email.subject,
             sender=email.sender,
             body=email.body,
-            received_at=str(email.received_at)
-            if email.received_at
-            else None
+            received_at=str(email.received_at) if email.received_at else None
         )
 
-    return {
-        "emails": len(emails)
-    }
+    return {"emails": len(emails)}
+
+
 @router.get("/debug-senders")
-def debug_senders(
-    db: Session = Depends(get_db)
-):
+def debug_senders(db: Session = Depends(get_db)):
     emails = (
         db.query(Email)
         .limit(20)
         .all()
     )
-
-    return [
-        {
-            "id": e.id,
-            "sender": e.sender
-        }
-        for e in emails
-    ]
+    return [{"id": e.id, "sender": e.sender} for e in emails]

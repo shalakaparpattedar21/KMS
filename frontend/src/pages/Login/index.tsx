@@ -1,4 +1,5 @@
 import { ArrowRight, Mail, FileText, Sparkles, ShieldCheck, Lock } from "lucide-react";
+import { API_URL } from "../../services/api.ts";
 
 const features = [
   {
@@ -25,7 +26,7 @@ const features = [
 
 export default function Login() {
   const login = () => {
-    window.location.href = "http://localhost:8000/api/auth/google/login";
+    window.location.href = `${API_URL}/api/auth/google/login`;
   };
 
   return (
@@ -40,11 +41,7 @@ export default function Login() {
       {/* Header */}
       <header className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 lg:px-8">
         <div className="flex items-center gap-4">
-          <img
-            src="/riidl_logo.png"
-            alt="RIIDL"
-            className="h-12 w-auto"
-          />
+          <img src="/riidl_logo.png" alt="RIIDL" className="h-12 w-auto" />
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#A61E22]">
               Enterprise
@@ -63,13 +60,11 @@ export default function Login() {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:gap-12 items-start">
           {/* Left Column - Hero Content */}
           <div className="space-y-8">
-            {/* Badge */}
             <div className="inline-flex items-center gap-2 rounded-full border border-[#A61E22]/20 bg-white/70 px-3.5 py-2 text-sm font-medium text-[#A61E22] shadow-sm backdrop-blur hover:border-[#A61E22]/40 transition-all">
               <Sparkles size={16} />
               Accessing Data across RIIDL
             </div>
 
-            {/* Headline */}
             <div className="space-y-4">
               <h2 className="max-w-3xl text-5xl font-bold leading-tight text-zinc-950 sm:text-6xl lg:text-6xl">
                 AI-Powered Knowledge Retrieval System
@@ -79,7 +74,6 @@ export default function Login() {
               </p>
             </div>
 
-            {/* Benefit Points */}
             <ul className="space-y-3 max-w-2xl">
               <li className="flex items-start gap-3 text-zinc-700">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#A61E22]/10 mt-0.5">
@@ -101,7 +95,6 @@ export default function Login() {
               </li>
             </ul>
 
-            {/* Feature Grid */}
             <div className="grid max-w-4xl grid-cols-1 gap-4 sm:grid-cols-2 pt-4">
               {features.map((feature) => {
                 const Icon = feature.icon;
@@ -121,11 +114,10 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Right Column - Sign In Card (Beside Title) */}
+          {/* Right Column - Sign In Card */}
           <div className="lg:sticky lg:top-8">
             <div className="rounded-2xl border border-zinc-200 bg-white/80 p-3 shadow-2xl shadow-zinc-950/15 backdrop-blur">
               <div className="rounded-xl border border-zinc-100 bg-gradient-to-b from-white via-zinc-50/50 to-zinc-50 p-8 space-y-6">
-                {/* Card Header */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <Lock size={18} className="text-[#A61E22]" />
@@ -137,7 +129,6 @@ export default function Login() {
                   </p>
                 </div>
 
-                {/* Sign In Button */}
                 <button
                   onClick={login}
                   className="group relative w-full overflow-hidden rounded-lg bg-[#A61E22] px-6 py-4 text-sm font-semibold text-white shadow-lg shadow-[#A61E22]/25 transition-all duration-200 hover:bg-[#8f181c] hover:shadow-xl hover:shadow-[#A61E22]/30 active:scale-95"
@@ -153,7 +144,6 @@ export default function Login() {
                   </span>
                 </button>
 
-                {/* Features List */}
                 <div className="space-y-2 pt-2 border-t border-zinc-100">
                   {["Gmail Search", "Document Search", "Knowledge Hub"].map((item) => (
                     <div key={item} className="flex items-center gap-2 text-xs text-zinc-600">
@@ -163,7 +153,6 @@ export default function Login() {
                   ))}
                 </div>
 
-                {/* Trust Badges */}
                 <div className="pt-2 border-t border-zinc-100 space-y-2">
                   <div className="flex items-center gap-2 text-xs text-zinc-500">
                     <ShieldCheck size={14} className="text-[#A61E22]" />
