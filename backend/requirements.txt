@@ -1,49 +1,28 @@
-# Enterprise KMS — Backend Dependencies
-# Last updated: production migration to google-genai SDK
-#
-# CHANGES FROM PREVIOUS VERSION:
-#   REMOVED: google-generativeai  (deprecated, shows FutureWarning on startup)
-#   ADDED:   google-genai         (current stable SDK, all new Google AI features)
-#   REMOVED: sentence-transformers, torch  (never used — embeddings now use Gemini)
-#   KEPT:    all other dependencies unchanged
 
-# ── Web framework ──────────────────────────────────────────────────────────────
 fastapi
 uvicorn[standard]
 
-# ── Database ───────────────────────────────────────────────────────────────────
 sqlalchemy
 psycopg2-binary
 alembic
 
-# ── Auth & HTTP ────────────────────────────────────────────────────────────────
 authlib
 requests
 httpx
 python-dotenv
 itsdangerous
 
-# ── Google AI (current SDK) ────────────────────────────────────────────────────
-# Replaces the deprecated google-generativeai package.
-# Used for: Gemini LLM responses, text-embedding-004 embeddings.
 google-genai
 
-# ── Google APIs (Drive, Gmail, OAuth) ─────────────────────────────────────────
 google-api-python-client
 google-auth
 google-auth-httplib2
 
-# ── Vector DB ──────────────────────────────────────────────────────────────────
 chromadb
 
-# ── Document extraction ────────────────────────────────────────────────────────
 python-docx
 pypdf
 openpyxl
 lxml
-
-# ── Misc ───────────────────────────────────────────────────────────────────────
 python-multipart
 email-validator
-sentence-transformers
-torch

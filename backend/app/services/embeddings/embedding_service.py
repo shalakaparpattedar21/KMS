@@ -1,14 +1,12 @@
+# backend/app/services/embeddings/embedding_service.py
 
-from sentence_transformers import SentenceTransformer
+from chromadb.utils import embedding_functions
 
-_model = SentenceTransformer("all-MiniLM-L6-v2")
+_ef = embedding_functions.DefaultEmbeddingFunction()
 
 
 class EmbeddingService:
 
     @staticmethod
-    def embed(text: str):
-        return _model.encode(
-            text,
-            normalize_embeddings=True
-        ).tolist()
+    def embed(text: str) -> list:
+        return list(_ef([(text or "")[:2048]])[0])
