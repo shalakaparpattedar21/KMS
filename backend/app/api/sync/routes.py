@@ -1,11 +1,12 @@
 # app/api/sync/routes.py
 
 import logging
+import threading
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.database.session import get_db
+from app.database.session import get_db, SessionLocal
 from app.models.document import Document
 from app.models.document_content import DocumentContent
 from app.services.google_drive.sync_service import SyncService
@@ -19,14 +20,30 @@ router = APIRouter(
 )
 
 
+def _sync_in_background(access_token: str, user_id: int):
+    """
+    Runs SyncService.sync_files() in a background thread with its own
+    DB session so it doesn't block the HTTP request.
+    Render's 30-second request timeout won't affect this.
+    """
+    db = SessionLocal()
+    try:
+        count = SyncService.sync_files(access_token, user_id, db)
+        logger.info(f"[SYNC] Background sync complete for user_id={user_id} count={count}")
+    except Exception as e:
+        logger.error(f"[SYNC] Background sync failed for user_id={user_id}: {e}")
+    finally:
+        db.close()
+
+
 @router.post("/start")
 async def start_sync(
     request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    Sync Google Drive files for the current user.
-    Creates Document rows, saves DocumentContent, and indexes into Chroma.
+    Kicks off a Google Drive sync for the current user in a background thread.
+    Returns immediately with 202 Accepted — sync runs in the background.
     """
     access_token = request.session.get("access_token")
     user_id = request.session.get("user_id")
@@ -37,9 +54,14 @@ async def start_sync(
     if not user_id:
         raise HTTPException(status_code=401, detail="User not authenticated")
 
-    count = SyncService.sync_files(access_token, user_id, db)
+    thread = threading.Thread(
+        target=_sync_in_background,
+        args=(access_token, user_id),
+        daemon=True,
+    )
+    thread.start()
 
-    return {"synced": count}
+    return {"message": "Sync started in background. Refresh documents in a minute."}
 
 
 @router.post("/reindex-documents")
