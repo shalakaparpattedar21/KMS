@@ -1,13 +1,13 @@
-import google.generativeai as genai
-from app.core.config import settings
+from sentence_transformers import SentenceTransformer
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
+_model = SentenceTransformer("all-MiniLM-L6-v2")
+
 
 class EmbeddingService:
+
     @staticmethod
-    def embed(text: str) -> list:
-        result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text,
-        )
-        return result["embedding"]
+    def embed(text: str):
+        return _model.encode(
+            text,
+            normalize_embeddings=True
+        ).tolist()

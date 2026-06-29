@@ -1,20 +1,41 @@
-from starlette.middleware.sessions import SessionMiddleware
+# app/main.py
+#
+# CHANGES:
+#   - Replaced @app.on_event("startup") with lifespan context manager
+#     (on_event is deprecated in FastAPI 0.95+ and shows a warning)
+#   - Middleware order preserved (SessionMiddleware must wrap CORS)
+#   - same_site="none" preserved for cross-origin cookie support
+#     (Vercel frontend → Render backend requires SameSite=None; Secure)
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+
 from app.api.auth.google import router as google_router
-from app.core.config import settings
-from app.database.init_db import init_db
-from fastapi import FastAPI, Request
-from app.api.sync.routes import router as sync_router
-from app.api.documents.routes import router as documents_router
-from app.api.search.routes import router as search_router
 from app.api.chat.routes import router as chat_router
-from app.api.gmail.routes import router as gmail_router
+from app.api.documents.routes import router as documents_router
+from app.api.drive.routes import router as drive_router
 from app.api.gmail.actions import router as gmail_actions_router
 from app.api.gmail.email_details import router as gmail_email_router
-from app.api.drive.routes import router as drive_router
+from app.api.gmail.routes import router as gmail_router
+from app.api.search.routes import router as search_router
+from app.api.sync.routes import router as sync_router
+from app.core.config import settings
+from app.database.init_db import init_db
 
-app = FastAPI()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run startup tasks before the app begins serving requests."""
+    init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+# ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(documents_router)
 app.include_router(sync_router)
 app.include_router(search_router)
@@ -26,17 +47,11 @@ app.include_router(drive_router, prefix="/api/drive", tags=["Drive"])
 app.include_router(google_router, prefix="/api/auth", tags=["Authentication"])
 
 
-@app.on_event("startup")
-async def startup():
-    init_db()
+# ── Middleware ─────────────────────────────────────────────────────────────────
+# ORDER MATTERS in Starlette: middleware added last runs first on incoming
+# requests, so SessionMiddleware must be added AFTER CORSMiddleware so that
+# sessions are available inside CORS-handled routes.
 
-
-# ---------------------------------------------------------------------------
-# CORS
-# FRONTEND_URL must be set in the Render environment:
-#   - Local dev:   http://localhost:5173
-#   - Production:  https://your-app.vercel.app
-# ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.FRONTEND_URL],
@@ -45,12 +60,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------------------------
-# Session middleware
-# HTTPS_ONLY is read from env:
-#   - Local dev:   false   (no HTTPS on localhost)
-#   - Production:  true    (Render serves over HTTPS)
-# ---------------------------------------------------------------------------
+# Session cookie:
+#   - same_site="none" is required when frontend (Vercel) and backend (Render)
+#     are on different origins. Browsers block SameSite=Lax cross-site cookies.
+#   - https_only must be True in production so the browser sends the cookie
+#     over HTTPS. Set HTTPS_ONLY=true in Render env vars.
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SESSION_SECRET,
@@ -63,4 +77,10 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"message": "working"}
+    return {"message": "RIIDL KMS API running"}
+
+
+@app.get("/health")
+def health():
+    """Health check endpoint for Render."""
+    return {"status": "ok"}

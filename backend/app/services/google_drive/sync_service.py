@@ -1,4 +1,8 @@
 # app/services/google_drive/sync_service.py
+#
+# FIXED: Error handler now calls db.rollback() before logging when db.flush()
+# fails (e.g. NUL bytes in content). Without this, SQLAlchemy leaves the
+# session in PendingRollbackError state and crashes every subsequent file.
 
 import logging
 from datetime import datetime
@@ -43,11 +47,9 @@ class SyncService:
             mime_type = file.get("mimeType", "")
             file_name = file.get("name", "(Untitled)")
 
-            # Skip unsupported Google native formats
             if mime_type in _SKIP_MIME_TYPES:
                 continue
 
-            # Check if already synced
             existing = (
                 db.query(Document)
                 .filter(
@@ -58,7 +60,6 @@ class SyncService:
             )
 
             if existing:
-                # Doc row exists — check if content + index is also done
                 already_indexed = (
                     db.query(DocumentContent)
                     .filter(DocumentContent.document_id == existing.id)
@@ -75,7 +76,6 @@ class SyncService:
                     )
                 continue
 
-            # Save Document metadata
             owner_email = None
             if file.get("owners"):
                 owner_email = file["owners"][0].get("emailAddress")
@@ -118,17 +118,17 @@ class SyncService:
         file_name: str,
         db: Session,
     ):
+        drive_id = document.drive_file_id
         try:
             if mime_type == _GOOGLE_DOC_MIME:
                 text = DriveService.export_google_doc(
                     access_token=access_token,
-                    file_id=document.drive_file_id,
+                    file_id=drive_id,
                 )
             else:
-                # Pass mime_type and file_name so the right extractor is used
                 text = DriveService.download_file(
                     access_token=access_token,
-                    file_id=document.drive_file_id,
+                    file_id=drive_id,
                     mime_type=mime_type,
                     file_name=file_name,
                 )
@@ -157,7 +157,11 @@ class SyncService:
             logger.info(f"[SYNC] Indexed: {file_name} (doc_id={document.id})")
 
         except Exception as e:
-            logger.error(
-                f"[SYNC] Failed to index '{file_name}' "
-                f"(drive_id={document.drive_file_id}): {e}"
-            )
+            # Rollback the failed flush so the session is clean for the next file.
+            # Without this, SQLAlchemy raises PendingRollbackError on every
+            # subsequent db operation in this session.
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            logger.error(f"[SYNC] Failed to index '{file_name}' (drive_id={drive_id}): {e}")
