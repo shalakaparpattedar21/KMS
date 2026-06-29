@@ -45,3 +45,5 @@ lxml
 # ── Misc ───────────────────────────────────────────────────────────────────────
 python-multipart
 email-validator
+sentence-transformers
+torch
