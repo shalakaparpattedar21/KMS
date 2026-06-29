@@ -9,4 +9,4 @@ class EmbeddingService:
 
     @staticmethod
     def embed(text: str) -> list:
-        return list(_ef([(text or "")[:2048]])[0])
+        return [float(x) for x in _ef([(text or "")[:2048]])[0]]
