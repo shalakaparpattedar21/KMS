@@ -3,8 +3,16 @@
 # FIXED: Error handler now calls db.rollback() before logging when db.flush()
 # fails (e.g. NUL bytes in content). Without this, SQLAlchemy leaves the
 # session in PendingRollbackError state and crashes every subsequent file.
+#
+# TEMPORARY SAFEGUARD (Render Free tier, 512 MB RAM):
+# "Sync Now" used to process every Drive file in a single request, which
+# blows past Render Free's memory/time limits on large Drive accounts.
+# Until we move sync to a background worker, we cap each sync run to the
+# first MAX_SYNC_FILES files. Remove this cap once we're off Render Free
+# or have a proper background job runner in place.
 
 import logging
+import os
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -15,6 +23,10 @@ from app.services.google_drive.drive_service import DriveService
 from app.services.rag.index_service import IndexService
 
 logger = logging.getLogger(__name__)
+
+# Temporary production safeguard for Render Free (512 MB RAM).
+# Override via env var SYNC_BATCH_SIZE if needed. Default: 20.
+MAX_SYNC_FILES = int(os.getenv("SYNC_BATCH_SIZE", "20"))
 
 _GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 
@@ -38,7 +50,18 @@ class SyncService:
         data = DriveService.get_files(access_token)
         files = data.get("files", [])
 
-        logger.info(f"[SYNC] Drive returned {len(files)} files for user_id={user_id}")
+        total_available = len(files)
+        logger.info(f"[SYNC] Drive returned {total_available} files for user_id={user_id}")
+
+        # TEMPORARY SAFEGUARD: only process the first MAX_SYNC_FILES files
+        # per sync run so this stays within Render Free's memory/time limits.
+        if total_available > MAX_SYNC_FILES:
+            files = files[:MAX_SYNC_FILES]
+
+        logger.info(
+            f"[SYNC] Processing {len(files)} of {total_available} files "
+            f"(user_id={user_id}, MAX_SYNC_FILES={MAX_SYNC_FILES})"
+        )
 
         synced = 0
 
